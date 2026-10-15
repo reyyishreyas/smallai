@@ -114,7 +114,7 @@ expert:
 2. **exits early**: the first hard failure ends the episode with
    `retake`,
 3. **re-checks** any reading that lands in the suspect band
-   (within 0.07 of a threshold) before believing it,
+   (at or above FAIL, below PASS) before believing it,
 4. finishes: any remaining suspect -> `review`, else `pass`.
 
 Every policy in this project emits the same output shape:

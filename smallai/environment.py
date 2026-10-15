@@ -60,17 +60,17 @@ PASS: dict[str, float] = {
     "resolution": 0.55,
 }
 
-# Measurement noise on each reading, and the boundary band inside
-# which a reading is close enough to a threshold to deserve a
-# second look.
+# Measurement noise on each reading. A reading inside the suspect
+# band (at or above FAIL, below PASS) is re-checked once before it
+# is believed; noise is what makes that re-check worth anything.
 NOISE_SIGMA = 0.08
-BOUNDARY_BAND = 0.07
 
 # Defect-cause classes the sampler draws from. Weights are set per
-# split: training data mirrors field reality (blur dominates bad
-# captures), test data is balanced so a policy cannot pass by
-# learning "blurry -> retake" alone -- the shortcut the ticket's
-# journey-learning comparison is designed to expose.
+# split and each dict sums to 1.0: training data mirrors field
+# reality (blur dominates bad captures), test data is balanced so a
+# policy cannot pass by learning "blurry -> retake" alone -- the
+# shortcut the ticket's journey-learning comparison is designed to
+# expose.
 CAUSES: tuple[str, ...] = (
     "clean",
     "blur",
@@ -91,15 +91,17 @@ TRAIN_WEIGHTS: dict[str, float] = {
     "resolution": 0.05,
     "multi": 0.10,
 }
+# Sum exactly 1.0: clean matches the train share, every named
+# defect sits at 0.10 (blur no longer dominates), multi at 0.05.
 TEST_WEIGHTS: dict[str, float] = {
     "clean": 0.35,
-    "blur": 0.1125,
-    "glare": 0.1125,
-    "brightness": 0.1125,
-    "coverage": 0.1125,
-    "skew": 0.1125,
-    "resolution": 0.1125,
-    "multi": 0.075,
+    "blur": 0.10,
+    "glare": 0.10,
+    "brightness": 0.10,
+    "coverage": 0.10,
+    "skew": 0.10,
+    "resolution": 0.10,
+    "multi": 0.05,
 }
 
 
@@ -140,26 +142,6 @@ class Scenario:
         if value < PASS[name]:
             return "suspect"
         return "pass"
-
-    def near_threshold(self, name: str, reading: float) -> bool:
-        """Whether a reading sits close enough to a threshold to re-check.
-
-        Parameters
-        ----------
-        name : str
-            The signal measured.
-        reading : float
-            The measured value.
-
-        Returns
-        -------
-        bool
-            True within ``BOUNDARY_BAND`` of either threshold.
-        """
-        return (
-            abs(reading - FAIL[name]) <= BOUNDARY_BAND
-            or abs(reading - PASS[name]) <= BOUNDARY_BAND
-        )
 
 
 def observe(

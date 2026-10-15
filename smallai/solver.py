@@ -2,11 +2,11 @@
 
 The expert checks signals in a fixed order -- cheapest-to-fail first,
 so a hopeless capture is rejected after one measurement -- and exits
-early on the first hard failure. Suspect readings near a threshold
-are measured twice before being believed (see
-:data:`smallai.environment.BOUNDARY_BAND`): that re-check is the
-"intermediate verification step" the ticket (AI-267) asks the learned
-policy to discover on its own.
+early on the first hard failure. A suspect reading -- one inside
+the band between the fail and pass thresholds -- is measured twice
+before being believed: that re-check is the "intermediate
+verification step" the ticket (AI-267) asks the learned policy to
+discover on its own.
 
 The final decision:
 
@@ -105,17 +105,13 @@ class ExpertPolicy:
         """
         checked: dict[str, float] = {}
         path: list[str] = []
-        rechecked: set[str] = set()
 
         for name in ORDER:
             reading = self._measure(scenario, name, rng)
-            # A borderline reading gets one second measurement before
-            # it is believed.
-            if (
-                scenario.near_threshold(name, reading)
-                and name not in rechecked
-            ):
-                rechecked.add(name)
+            # A suspect reading gets one second measurement before
+            # it is believed (suspect-only; matches the agent's
+            # re-check(suspect_pre) semantics in EXPERIMENT.md 3).
+            if scenario.level(name, reading) == "suspect":
                 reading = self._measure(scenario, name, rng)
             checked[name] = reading
             path.append(name)
