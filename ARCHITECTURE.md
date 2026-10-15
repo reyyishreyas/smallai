@@ -324,10 +324,10 @@ assumed.
 | `smallai/environment.py` | signals, thresholds, noise, scenario sampling | built |
 | `smallai/solver.py` | the expert (labels + rules baseline) | built |
 | `smallai/agent.py` | state encoding, Q-table, decide(), JSON I/O | built |
-| `smallai/train.py` | trajectories, rewards, TD learning, ablations | planned |
-| `smallai/evaluate.py` | calibration, metrics, uncertainty, tables | planned |
+| `smallai/train.py` | trajectories, rewards, TD learning, ablations | built |
+| `smallai/evaluate.py` | calibration, metrics, uncertainty, tables | next |
 | `scripts/run_poc.py` | one command: generate -> train -> evaluate -> `reports/poc.md` | planned |
-| `tests/` | gates per module | 33 gates |
+| `tests/` | gates per module | 61 gates |
 | `EXPERIMENT.md` | the frozen pre-registered protocol | v2.1 |
 | `ARCHITECTURE.md` | this document | — |
 
