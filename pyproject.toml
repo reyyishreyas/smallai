@@ -1,0 +1,16 @@
+[project]
+name = "smallai"
+version = "0.1.0"
+description = "From-scratch, non-LLM decision model for offline document-capture validation (Mifos AI-267)"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[tool.ruff]
+line-length = 79
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
