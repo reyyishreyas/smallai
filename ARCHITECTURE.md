@@ -325,9 +325,9 @@ assumed.
 | `smallai/solver.py` | the expert (labels + rules baseline) | built |
 | `smallai/agent.py` | state encoding, Q-table, decide(), JSON I/O | built |
 | `smallai/train.py` | trajectories, rewards, TD learning, ablations | built |
-| `smallai/evaluate.py` | calibration, metrics, uncertainty, tables | next |
-| `scripts/run_poc.py` | one command: generate -> train -> evaluate -> `reports/poc.md` | planned |
-| `tests/` | gates per module | 61 gates |
+| `smallai/evaluate.py` | calibration, metrics, uncertainty, tables | built |
+| `scripts/run_poc.py` | one command: generate -> train -> evaluate -> `reports/poc.md` | built |
+| `tests/` | gates per module | 110 gates |
 | `EXPERIMENT.md` | the frozen pre-registered protocol | v2.1 |
 | `ARCHITECTURE.md` | this document | — |
 
@@ -337,10 +337,16 @@ assumed.
 # any Python >= 3.10 with numpy and pytest
 python -m pytest tests/ -q        # the gates
 python scripts/run_poc.py         # full pipeline -> reports/poc.md
+
+# a fast end-to-end check that writes nowhere near the scored
+# numbers; the report labels itself a smoke run
+python scripts/run_poc.py --budget 5000 --resamples 500 --out /tmp/smoke
 ```
 
-(The commands land with their phases; today only the environment,
-the expert and their tests exist.)
+The scored run takes the pre-registered budget of 10^6 episodes per
+TD policy across the three noise conditions, and writes
+`reports/poc.md`, `reports/poc.json` and one JSON Q-table per TD
+policy.
 
 ## 12. Honest limitations
 
@@ -363,5 +369,7 @@ the expert and their tests exist.)
 
 All numbers in this document are design constants (thresholds,
 rewards, budgets) traceable to `EXPERIMENT.md`. No performance is
-claimed, because none has been measured yet. Measured results will
-live in `reports/poc.md`, not here.
+claimed here: the Stage A run has now been executed, and its
+measured results live in `reports/poc.md` and nowhere else. Read
+that report for the outcome, including whether the graded
+comparison held up.
