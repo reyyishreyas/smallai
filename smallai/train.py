@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -189,6 +189,13 @@ class TrainingReport:
         Distinct states touched.
     final_block_mean : float
         Mean reward of the final 20% of complete blocks.
+    block_means : tuple of float
+        Mean reward per complete 100-episode block, oldest first:
+        the training curve EXPERIMENT.md section 7 requires to ship
+        so convergence is auditable.
+    visit_histogram : dict
+        Visits to the number of states with exactly that many: the
+        compact state-visit histogram of section 7.
     """
 
     name: str
@@ -206,6 +213,8 @@ class TrainingReport:
     stored_entries: int
     visited_states: int
     final_block_mean: float
+    block_means: tuple[float, ...] = ()
+    visit_histogram: dict[int, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """The report as a JSON-friendly dict."""
@@ -225,6 +234,11 @@ class TrainingReport:
             "stored_entries": self.stored_entries,
             "visited_states": self.visited_states,
             "final_block_mean": self.final_block_mean,
+            "block_means": list(self.block_means),
+            "visit_histogram": {
+                str(visits): states
+                for visits, states in self.visit_histogram.items()
+            },
         }
 
 
@@ -582,6 +596,32 @@ def plateau_test(
     )
 
 
+def visit_histogram(visits: dict[State, int]) -> dict[int, int]:
+    """How many states were visited a given number of times.
+
+    The compact state-visit histogram EXPERIMENT.md section 7
+    requires to ship: instead of one row per state (up to 15,625),
+    one row per distinct visit count, which is the shape that makes
+    it visible at a glance whether training covered the space or
+    kept returning to the same few states.
+
+    Parameters
+    ----------
+    visits : dict
+        State to number of visits recorded during training.
+
+    Returns
+    -------
+    dict
+        Visit count to number of states with exactly that many,
+        ascending in visit count.
+    """
+    histogram: dict[int, int] = {}
+    for count in visits.values():
+        histogram[count] = histogram.get(count, 0) + 1
+    return dict(sorted(histogram.items()))
+
+
 def train_td(
     agent: QAgent,
     scenarios: list[Scenario],
@@ -627,7 +667,9 @@ def train_td(
     Returns
     -------
     TrainingReport
-        Episode counts, plateau outcome and table size.
+        Episode counts, plateau outcome, table size, and the two
+        artifacts section 7 requires to ship: the training curve
+        (``block_means``) and the state-visit histogram.
 
     Raises
     ------
@@ -646,6 +688,7 @@ def train_td(
     counts = {"expert": 0, "flawed": 0, "on_policy": 0}
     block_means: list[float] = []
     block_rewards: list[float] = []
+    visits: dict[State, int] = {}
     total_reward = 0.0
     plateau = False
     checked_at: int | None = None
@@ -675,6 +718,7 @@ def train_td(
         reward_total = episode_reward(trajectory, label)
         total_reward += reward_total
         for step in trajectory:
+            visits[step.state] = visits.get(step.state, 0) + 1
             if step.done:
                 reward = verdict_reward(step.action, label)
                 reward += consistency_bonus(step.action, step.state)
@@ -720,6 +764,8 @@ def train_td(
         stored_entries=agent.stored_entries,
         visited_states=agent.visited_states,
         final_block_mean=sum(tail) / len(tail),
+        block_means=tuple(block_means),
+        visit_histogram=visit_histogram(visits),
     )
 
 

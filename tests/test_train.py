@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 
 import numpy as np
@@ -28,6 +29,7 @@ from smallai.train import (
     rollout,
     train_td,
     verdict_reward,
+    visit_histogram,
 )
 
 START = tuple(0 for _ in SIGNALS)
@@ -380,3 +382,62 @@ def test_tree_dataset_shape() -> None:
     x, y = make_tree_dataset(train, labels, random.Random(0))
     assert x.shape == (10, 6)
     assert list(y) == labels
+
+
+# --- the two artifacts EXPERIMENT.md section 7 requires to ship ---
+
+
+def test_training_report_carries_the_curve() -> None:
+    """Section 7 ships the training curve, so it must exist."""
+    train = make_splits(seed=6)["train"][:30]
+    report = train_td(
+        QAgent(),
+        train,
+        seed=10,
+        budget=500,
+        min_episodes=500,
+        check_interval=500,
+    )
+    assert len(report.block_means) == 500 // 100
+    assert all(isinstance(mean, float) for mean in report.block_means)
+
+
+def test_visit_histogram_partitions_the_visited_states() -> None:
+    """Every visited state falls in exactly one bucket."""
+    train = make_splits(seed=6)["train"][:30]
+    report = train_td(
+        QAgent(),
+        train,
+        seed=11,
+        budget=300,
+        min_episodes=300,
+        check_interval=300,
+    )
+    assert sum(report.visit_histogram.values()) == report.visited_states
+    assert all(count > 0 for count in report.visit_histogram)
+
+
+def test_visit_histogram_groups_states_by_visit_count() -> None:
+    visits = {
+        START: 3,
+        (1,) + START[:5]: 3,
+        (2,) + START[:5]: 1,
+    }
+    assert visit_histogram(visits) == {1: 1, 3: 2}
+
+
+def test_report_serializes_without_json_complaints() -> None:
+    """The new fields must stay JSON-friendly, keys included."""
+    train = make_splits(seed=6)["train"][:20]
+    report = train_td(
+        QAgent(),
+        train,
+        seed=12,
+        budget=200,
+        min_episodes=200,
+        check_interval=200,
+    )
+    payload = report.to_dict()
+    assert all(isinstance(k, str) for k in payload["visit_histogram"])
+    assert payload["block_means"] == list(report.block_means)
+    json.dumps(payload)
