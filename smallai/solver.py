@@ -85,9 +85,7 @@ class ExpertPolicy:
     def __init__(self, noisy: bool = True) -> None:
         self.noisy = noisy
 
-    def decide(
-        self, scenario: Scenario, rng=None
-    ) -> Decision:
+    def decide(self, scenario: Scenario, rng=None) -> Decision:
         """Evaluate a capture and return a structured decision.
 
         Parameters
@@ -147,9 +145,7 @@ class ExpertPolicy:
             path=tuple(path),
         )
 
-    def _measure(
-        self, scenario: Scenario, name: str, rng
-    ) -> float:
+    def _measure(self, scenario: Scenario, name: str, rng) -> float:
         """Return the reading for one signal, noisy or true."""
         if self.noisy and rng is not None:
             return observe(scenario, name, rng)
@@ -164,8 +160,6 @@ class ExpertPolicy:
     @staticmethod
     def _pass_confidence(checked: dict[str, float]) -> float:
         """Confidence grows with the tightest margin over PASS."""
-        margin = min(
-            (checked[n] - PASS[n]) / (1.0 - PASS[n]) for n in SIGNALS
-        )
+        margin = min((checked[n] - PASS[n]) / (1.0 - PASS[n]) for n in SIGNALS)
         margin = min(1.0, max(0.0, margin))
         return round(0.55 + 0.45 * margin, 4)

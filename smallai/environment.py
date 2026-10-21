@@ -144,9 +144,7 @@ class Scenario:
         return "pass"
 
 
-def observe(
-    scenario: Scenario, name: str, rng: random.Random
-) -> float:
+def observe(scenario: Scenario, name: str, rng: random.Random) -> float:
     """Measure one signal, adding sensor noise.
 
     Parameters
@@ -167,9 +165,7 @@ def observe(
     return min(1.0, max(0.0, noisy))
 
 
-def sample_scenario(
-    rng: random.Random, weights: dict[str, float]
-) -> Scenario:
+def sample_scenario(rng: random.Random, weights: dict[str, float]) -> Scenario:
     """Draw a synthetic capture from the defect-class mixture.
 
     Parameters
