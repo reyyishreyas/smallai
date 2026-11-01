@@ -1,5 +1,41 @@
 # Discord message — to Victor Romero
 
+**Send this to Victor (Discord DM).** The final version with the SmallAI Decision Model results update.
+
+---
+
+Hey @Victor Romero, wanted to share an update on AI-267 and get your thoughts on the implementation.
+
+I built the SmallAI decision model from scratch using pure NumPy, without an LLM. It takes 10 drone pre-flight features and reasons through three intermediate states — energy, environmental risk, and navigation/comms — before producing a final decision.
+
+The core idea is journey learning: training the model on valid and corrupted reasoning paths, with a separate verifier to detect invalid intermediate steps and a HOLD fallback when confidence is low.
+
+I evaluated it against multiple baselines:
+- **M:** Full SmallAI model with journey learning and a verifier.
+- **B2:** Baseline without journey learning, trained on valid trajectories.
+- **B1:** A smaller shortcut MLP with 2,004 parameters.
+- **B0:** A weaker baseline.
+- **B3:** An analytical GPT-4o-mini comparison for estimated cost and latency, rather than a measured accuracy benchmark.
+
+On the shifted test set, **M achieved 88.60% accuracy against B2's 73.06% — a +15.54 percentage-point improvement**, exceeding the +5-point target. The verifier achieved **0.938 AUC**, with 0.9475 precision and 0.9336 recall at the 0.5 threshold.
+
+The full model has 5,374 parameters, with approximately 15K FLOPs and 0.257 ms p95 inference latency. I've also completed the evaluation workflow, tests, documentation, and CLI for inspecting the complete decision trace.
+
+I'd really appreciate your feedback on the model design and evaluation, particularly whether the results sufficiently demonstrate the value of journey learning and verification under distribution shift.
+
+**Jira:** https://mifosforge.jira.com/browse/AI-267
+
+---
+
+## Notes (not part of the message)
+
+- The full detail lives in `smallai-decision-model/reports/AI-267-how-it-works.md` and `reports/results.md`.
+- Since MIFOS is banking-related, I want to check with Victor before finalizing this as the agreed design / acceptance.
+
+---
+
+## Previous version (Stage A.1) — kept for history
+
 **Send this to Victor (Discord DM).** The full detail stays in
 `AI-267_STAGE_A1_RESULTS.md` (the new round) and `AI-267_STAGE_A_RESULTS.md` (the first
 round) — this message only points at them and asks the three questions that are still open.
