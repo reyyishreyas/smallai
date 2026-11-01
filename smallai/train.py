@@ -103,6 +103,67 @@ Policy = Callable[[State, random.Random], str]
 
 
 @dataclass(frozen=True)
+class RewardSpec:
+    """The reward of section 6, written as data.
+
+    The protocol froze six numbers. Keeping them in one immutable
+    record means a later round can state a candidate reward
+    explicitly -- and be compared against the frozen one -- without
+    any of the training machinery changing. Every default here *is*
+    the frozen Stage A reward, so a run that does not pass a spec
+    behaves exactly as EXPERIMENT.md section 6 prescribes.
+
+    Attributes
+    ----------
+    correct : float
+        Reward for the oracle verdict.
+    adjacent_wrong : float
+        Penalty for an adjacent wrong verdict (review vs pass or
+        retake).
+    opposite_wrong : float
+        Penalty for an opposite wrong verdict (pass vs retake).
+    measurement : float
+        Cost of one measurement.
+    consistent : float
+        Bonus for a verdict the gathered evidence supports.
+    contradictory : float
+        Penalty for a verdict the gathered evidence contradicts.
+    suspect_refutes_retake : bool
+        Whether a *suspect* reading on its own contradicts "retake".
+        True is the frozen rule (only an observed fail supports
+        "retake"); False is the Stage A.1 candidate, in which a
+        suspect reading is the ambiguous case -- the latent value may
+        sit below the fail threshold -- and therefore does not refute
+        "retake".
+    """
+
+    correct: float = REWARD_CORRECT
+    adjacent_wrong: float = REWARD_ADJACENT_WRONG
+    opposite_wrong: float = REWARD_OPPOSITE_WRONG
+    measurement: float = REWARD_MEASUREMENT
+    consistent: float = REWARD_CONSISTENT
+    contradictory: float = REWARD_CONTRADICTORY
+    suspect_refutes_retake: bool = True
+
+
+#: The frozen Stage A reward (EXPERIMENT.md section 6). This is the
+#: default everywhere, so Stage A's behaviour is unchanged by the
+#: existence of this record.
+FROZEN_REWARD = RewardSpec()
+
+#: The Stage A.1 candidate reward (EXPERIMENT_A1.md section 3): the
+#: verdict term is untouched, the consistency term is halved, and a
+#: suspect reading no longer refutes "retake". Pre-registered with a
+#: decision rule; the shipped default stays :data:`FROZEN_REWARD`
+#: unless that rule is met.
+WIDE_CONSISTENCY_REWARD = RewardSpec(
+    consistent=REWARD_CONSISTENT * 0.5,
+    contradictory=REWARD_CONTRADICTORY * 0.5,
+    suspect_refutes_retake=False,
+)
+
+
+@dataclass(frozen=True)
 class Step:
     """One transition of a trajectory.
 
@@ -242,25 +303,45 @@ class TrainingReport:
         }
 
 
-def make_splits(seed: int) -> dict[str, list[Scenario]]:
+def make_splits(
+    seed: int,
+    *,
+    train_n: int = TRAIN_N,
+    calibration_n: int = CALIBRATION_N,
+    test_n: int = TEST_N,
+) -> dict[str, list[Scenario]]:
     """Draw the leakage-safe train / calibration / test splits.
 
     Scenarios (true signal vectors) are partitioned *before* any
     noise (EXPERIMENT.md section 4): uniqueness is enforced across
-    the combined 6,000 scenarios, so no true scenario can appear in
-    two splits. Train uses the skewed field mixture, calibration and
+    the combined scenarios, so no true scenario can appear in two
+    splits. Train uses the skewed field mixture, calibration and
     test the balanced one.
+
+    The three sizes are the protocol's defaults. A later round may
+    ask for a larger test split -- the Stage A.1 round does, because
+    a 1,000-scenario split cannot resolve a sub-percentage-point
+    paired effect -- and the split sizes are parameters so that
+    request is an explicit, reviewable change rather than a new
+    drawer with a subtly different rule.
 
     Parameters
     ----------
     seed : int
         Master seed; identical seeds give identical splits.
+    train_n : int
+        Distinct training scenarios (skewed mixture).
+    calibration_n : int
+        Distinct calibration scenarios (balanced mixture).
+    test_n : int
+        Distinct test scenarios (balanced mixture).
 
     Returns
     -------
     dict
         Split name to list of scenarios: 4,000 train (skewed),
-        1,000 calibration and 1,000 test (both balanced).
+        1,000 calibration and 1,000 test (both balanced), at the
+        default sizes.
     """
     rng = random.Random(seed)
     seen: set[tuple[float, ...]] = set()
@@ -270,9 +351,9 @@ def make_splits(seed: int) -> dict[str, list[Scenario]]:
         "test": [],
     }
     plan = (
-        ("train", TRAIN_N, TRAIN_WEIGHTS),
-        ("calibration", CALIBRATION_N, TEST_WEIGHTS),
-        ("test", TEST_N, TEST_WEIGHTS),
+        ("train", train_n, TRAIN_WEIGHTS),
+        ("calibration", calibration_n, TEST_WEIGHTS),
+        ("test", test_n, TEST_WEIGHTS),
     )
     for name, count, weights in plan:
         drawn: list[Scenario] = []
@@ -469,7 +550,9 @@ def rollout(
         state = next_state
 
 
-def verdict_reward(action: str, label: str) -> float:
+def verdict_reward(
+    action: str, label: str, reward: RewardSpec = FROZEN_REWARD
+) -> float:
     """The frozen verdict term (EXPERIMENT.md section 6).
 
     Parameters
@@ -478,6 +561,8 @@ def verdict_reward(action: str, label: str) -> float:
         The policy's terminal action.
     label : str
         The expert's oracle verdict.
+    reward : RewardSpec
+        The reward record; the default is the frozen one.
 
     Returns
     -------
@@ -486,13 +571,15 @@ def verdict_reward(action: str, label: str) -> float:
         adjacent (review vs pass/retake).
     """
     if action == label:
-        return REWARD_CORRECT
+        return reward.correct
     if {action, label} == {"pass", "retake"}:
-        return REWARD_OPPOSITE_WRONG
-    return REWARD_ADJACENT_WRONG
+        return reward.opposite_wrong
+    return reward.adjacent_wrong
 
 
-def consistency_bonus(action: str, state: State) -> float:
+def consistency_bonus(
+    action: str, state: State, reward: RewardSpec = FROZEN_REWARD
+) -> float:
     """The frozen evidence-consistency term (section 6).
 
     ``retake`` is consistent iff some observed fail exists,
@@ -500,12 +587,19 @@ def consistency_bonus(action: str, state: State) -> float:
     signals are observed pass-level. Deciding with zero or thin
     evidence is contradictory.
 
+    A spec with ``suspect_refutes_retake=False`` relaxes only the
+    first rule: a suspect reading also supports "retake", because a
+    suspect reading is the ambiguous case in which the latent value
+    may sit below the fail threshold.
+
     Parameters
     ----------
     action : str
         The terminal action.
     state : tuple of int
         The evidence gathered when it was taken.
+    reward : RewardSpec
+        The reward record; the default is the frozen one.
 
     Returns
     -------
@@ -515,16 +609,20 @@ def consistency_bonus(action: str, state: State) -> float:
     has_fail = FAIL_FINAL in state
     has_suspect = SUSPECT_PRE in state or SUSPECT_POST in state
     all_pass = all(code == PASS_FINAL for code in state)
-    if action == "retake" and has_fail:
-        return REWARD_CONSISTENT
+    if action == "retake" and (
+        has_fail or (has_suspect and not reward.suspect_refutes_retake)
+    ):
+        return reward.consistent
     if action == "review" and has_suspect:
-        return REWARD_CONSISTENT
+        return reward.consistent
     if action == "pass" and all_pass:
-        return REWARD_CONSISTENT
-    return REWARD_CONTRADICTORY
+        return reward.consistent
+    return reward.contradictory
 
 
-def episode_reward(trajectory: list[Step], label: str) -> float:
+def episode_reward(
+    trajectory: list[Step], label: str, reward: RewardSpec = FROZEN_REWARD
+) -> float:
     """The frozen per-episode total (section 6, bounds -1.90..+1.05).
 
     Parameters
@@ -533,6 +631,9 @@ def episode_reward(trajectory: list[Step], label: str) -> float:
         One full episode.
     label : str
         The expert's oracle verdict for its scenario.
+    reward : RewardSpec
+        The reward record; the default is the frozen one, whose
+        episode total is bounded by -1.90..+1.05.
 
     Returns
     -------
@@ -542,9 +643,9 @@ def episode_reward(trajectory: list[Step], label: str) -> float:
     terminal = trajectory[-1]
     measurements = sum(1 for step in trajectory if not step.done)
     return (
-        verdict_reward(terminal.action, label)
-        + consistency_bonus(terminal.action, terminal.state)
-        + REWARD_MEASUREMENT * measurements
+        verdict_reward(terminal.action, label, reward)
+        + consistency_bonus(terminal.action, terminal.state, reward)
+        + reward.measurement * measurements
     )
 
 
@@ -632,6 +733,7 @@ def train_td(
     check_interval: int = CHECK_INTERVAL,
     min_episodes: int = MIN_EPISODES,
     epsilon: float = 0.1,
+    reward: RewardSpec = FROZEN_REWARD,
 ) -> TrainingReport:
     """Train one TD agent by epsilon-greedy Q-learning (section 7).
 
@@ -663,6 +765,10 @@ def train_td(
         Burn-in before the first check.
     epsilon : float
         On-policy exploration rate (0.1 per section 7).
+    reward : RewardSpec
+        The reward record; the default is the frozen section 6
+        reward, so an unparameterised run is bit-for-bit the
+        protocol's.
 
     Returns
     -------
@@ -715,19 +821,21 @@ def train_td(
         index = rng.randrange(len(scenarios))
         trajectory = rollout(behavior, scenarios[index], rng)
         label = labels[index]
-        reward_total = episode_reward(trajectory, label)
+        reward_total = episode_reward(trajectory, label, reward)
         total_reward += reward_total
         for step in trajectory:
             visits[step.state] = visits.get(step.state, 0) + 1
             if step.done:
-                reward = verdict_reward(step.action, label)
-                reward += consistency_bonus(step.action, step.state)
+                reward_value = verdict_reward(step.action, label, reward)
+                reward_value += consistency_bonus(
+                    step.action, step.state, reward
+                )
             else:
-                reward = REWARD_MEASUREMENT
+                reward_value = reward.measurement
             agent.update(
                 step.state,
                 step.action,
-                reward,
+                reward_value,
                 step.next_state,
                 step.done,
             )

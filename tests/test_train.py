@@ -13,8 +13,16 @@ from smallai.environment import SIGNALS, Scenario
 from smallai.solver import ExpertPolicy
 from smallai.train import (
     FLAWS,
+    FROZEN_REWARD,
     MIX,
     MIX_EXPERT_ONLY,
+    REWARD_ADJACENT_WRONG,
+    REWARD_CONSISTENT,
+    REWARD_CONTRADICTORY,
+    REWARD_CORRECT,
+    REWARD_MEASUREMENT,
+    REWARD_OPPOSITE_WRONG,
+    WIDE_CONSISTENCY_REWARD,
     ShortcutTree,
     Step,
     consistency_bonus,
@@ -67,6 +75,30 @@ def test_splits_are_deterministic_under_seed() -> None:
     b = make_splits(seed=3)
     for name in a:
         assert [s.signals for s in a[name]] == [s.signals for s in b[name]]
+
+
+def test_splits_accept_explicit_sizes() -> None:
+    """A later round may ask for a larger test split (EXPERIMENT_A1.md).
+
+    The sizes are parameters so that the request is an explicit,
+    reviewable change; the train and calibration sizes stay at the
+    protocol's when only the test size is given.
+    """
+    splits = make_splits(seed=7, test_n=250)
+    assert len(splits["train"]) == 4000
+    assert len(splits["calibration"]) == 1000
+    assert len(splits["test"]) == 250
+
+
+def test_enlarged_split_stays_leakage_safe() -> None:
+    """Uniqueness still holds across a bigger combined pool."""
+    splits = make_splits(seed=8, train_n=200, calibration_n=100, test_n=300)
+    seen: set[tuple] = set()
+    for name, scenarios in splits.items():
+        for s in scenarios:
+            key = tuple(round(s.signals[n], 12) for n in SIGNALS)
+            assert key not in seen, f"{s.cause} leaked into {name}"
+            seen.add(key)
 
 
 # --- expert equivalence: solver vs agent-space rule ---
@@ -197,6 +229,77 @@ def test_consistency_terms() -> None:
     assert consistency_bonus("review", START) == -0.30
     all_pass = (4, 4, 4, 4, 4, 4)
     assert consistency_bonus("pass", all_pass) == 0.10
+
+
+# --- the reward as data (EXPERIMENT_A1.md section 3) ---
+
+
+def test_frozen_spec_is_the_protocol_reward() -> None:
+    """The spec's defaults must be EXPERIMENT.md section 6, exactly."""
+    assert FROZEN_REWARD.correct == REWARD_CORRECT == 1.0
+    assert FROZEN_REWARD.adjacent_wrong == REWARD_ADJACENT_WRONG == -0.5
+    assert FROZEN_REWARD.opposite_wrong == REWARD_OPPOSITE_WRONG == -1.0
+    assert FROZEN_REWARD.measurement == REWARD_MEASUREMENT == -0.05
+    assert FROZEN_REWARD.consistent == REWARD_CONSISTENT == 0.10
+    assert FROZEN_REWARD.contradictory == REWARD_CONTRADICTORY == -0.30
+    assert FROZEN_REWARD.suspect_refutes_retake is True
+
+
+def test_default_calls_use_the_frozen_spec() -> None:
+    """Parameterising the reward must not move the default behaviour."""
+    fail_state = (1, 4, 4, 4, 4, 4)
+    suspect_state = (3, 4, 4, 4, 4, 4)
+    all_pass = (4, 4, 4, 4, 4, 4)
+    assert verdict_reward("pass", "pass") == FROZEN_REWARD.correct
+    assert verdict_reward("pass", "retake") == FROZEN_REWARD.opposite_wrong
+    assert verdict_reward("review", "pass") == FROZEN_REWARD.adjacent_wrong
+    assert consistency_bonus("retake", fail_state) == FROZEN_REWARD.consistent
+    assert consistency_bonus("pass", fail_state) == FROZEN_REWARD.contradictory
+    assert (
+        consistency_bonus("review", suspect_state) == FROZEN_REWARD.consistent
+    )
+    assert consistency_bonus("review", START) == FROZEN_REWARD.contradictory
+    assert consistency_bonus("pass", all_pass) == FROZEN_REWARD.consistent
+
+
+def test_wide_consistency_spec_halves_consistency_and_accepts_suspect() -> None:
+    """The Stage A.1 candidate: the documented change, and only that."""
+    spec = WIDE_CONSISTENCY_REWARD
+    assert spec.consistent == REWARD_CONSISTENT / 2
+    assert spec.contradictory == REWARD_CONTRADICTORY / 2
+    assert spec.correct == REWARD_CORRECT
+    assert spec.adjacent_wrong == REWARD_ADJACENT_WRONG
+    assert spec.opposite_wrong == REWARD_OPPOSITE_WRONG
+    assert spec.measurement == REWARD_MEASUREMENT
+    assert spec.suspect_refutes_retake is False
+
+
+def test_wide_consistency_lets_suspect_support_retake() -> None:
+    """A suspect reading no longer refutes "retake" under the candidate."""
+    suspect_state = (3, 4, 4, 4, 4, 4)
+    assert consistency_bonus("retake", suspect_state, WIDE_CONSISTENCY_REWARD) == (
+        WIDE_CONSISTENCY_REWARD.consistent
+    )
+    # ... and the frozen rule still refuses it.
+    assert consistency_bonus("retake", suspect_state) == (
+        FROZEN_REWARD.contradictory
+    )
+
+
+def test_train_td_accepts_a_reward_spec() -> None:
+    """The training loop honours the spec it is given."""
+    train = make_splits(seed=9)["train"][:20]
+    report = train_td(
+        QAgent(),
+        train,
+        seed=13,
+        budget=200,
+        min_episodes=200,
+        check_interval=200,
+        reward=WIDE_CONSISTENCY_REWARD,
+    )
+    assert report.episodes == 200
+    assert report.stored_entries > 0
 
 
 def test_maximum_trajectory_scores_one_point_zero_five() -> None:

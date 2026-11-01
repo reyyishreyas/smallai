@@ -1,0 +1,70 @@
+# SmallAI decision model — default configuration (PRD sections 4-6)
+
+seed: 0
+
+data:
+  n_train: 2000           # labeled decision examples (limited-labels regime; see
+                          # README §6: journey rows add ~2.5x more supervision)
+  n_val: 5000
+  n_test_clean: 5000      # Test A
+  n_verifier_eval: 3000   # corrupted rows for verifier metrics
+  corrupted_max: 2
+  corruption_probs:
+    random_flip: 0.35
+    neighbour: 0.35
+    shortcut: 0.30
+  holdout_strategy: "neighbour"   # excluded from training: tests verifier generalisation
+  noise_sigma:                   # Test B: per-feature Gaussian noise
+    battery_pct: 2.0
+    wind_mps: 0.8
+    temp_c: 1.0
+    gps_fix_quality: 0.03
+    link_signal: 0.05
+    payload_kg: 0.1
+    distance_km: 0.5
+    sensor_health: 0.03
+    hour_of_day: 0.5
+    terrain_difficulty: 0.03
+  shift:                          # Test C: distribution shift
+    battery_pct: -8.0
+    wind_mps: 3.0
+    temp_c: -4.0
+    payload_kg: 0.5
+    distance_km: 1.25
+
+model:
+  hidden_enc: 32
+  hidden_head: 16
+  hidden_verifier: 24     # verifier encoder width (verifier head hidden is fixed 16)
+
+train:
+  epochs: 25
+  batch_size: 1024
+  lr: 0.003
+  weight_a: 1.0          # CE(final)
+  weight_b: 1.0          # sum_k CE(step_k)
+  weight_c: 4.0          # BCE(verifier)
+  weight_d: 0.2          # L_format
+  journey_learning: true
+  early_stop_patience: 5
+  verifier_neg_weight: 8.0   # upweight corrupted rows in the verifier BCE
+  verifier_epochs: 300        # verifier trains on all journey rows to convergence
+  verifier_batch_size: 256
+
+eval:
+  verifier_threshold: 0.5
+  verifier_decode_weight: 1.0   # lam in log p_step + lam * log validity
+
+benchmark:
+  warmup: 200
+  runs: 10000
+  batch_size: 256
+
+llm_proxy:                     # analytical estimate; never called in inference
+  model_name: "gpt-4o-mini (published pricing)"
+  prompt_tokens: 420
+  completion_tokens: 80
+  usd_per_m_input: 0.15
+  usd_per_m_output: 0.60
+  latency_ms_p50: 900
+  latency_ms_p95: 2200

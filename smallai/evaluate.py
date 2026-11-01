@@ -588,7 +588,13 @@ def mcnemar(first: Sequence[bool], second: Sequence[bool]) -> McNemarResult:
     tail = sum(
         math.comb(total, i) for i in range(min(first_only, second_only) + 1)
     )
-    p_value = min(1.0, 2.0 * tail / (2**total))
+    # Exact integer arithmetic, one division at the end. The binomial
+    # counts do not fit in a float once there are thousands of
+    # discordant pairs -- which is what an enlarged test split
+    # produces -- so converting them to one would overflow. Dividing
+    # the two integers directly keeps the value exact and gives the
+    # same answer as the float path for the small totals.
+    p_value = min(1.0, 2 * tail / (2**total))
     return McNemarResult(first_only, second_only, chi_square, p_value)
 
 
@@ -671,6 +677,66 @@ def paired_bootstrap_delta(
         estimates[start : start + size] = (a[index] - b[index]).mean(
             axis=1
         ) * 100.0
+    low, high = np.percentile(estimates, (2.5, 97.5))
+    return BootstrapDelta(
+        delta_pp=delta,
+        ci_low_pp=float(low),
+        ci_high_pp=float(high),
+        resamples=resamples,
+    )
+
+
+def paired_bootstrap_mean_delta(
+    first: Sequence[float],
+    second: Sequence[float],
+    *,
+    seed: int,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+) -> BootstrapDelta:
+    """Paired bootstrap CI for the difference of two paired means.
+
+    The same estimator as :func:`paired_bootstrap_delta`, but for a
+    continuous paired quantity -- the measurement count, for which the
+    correctness encoding of that function does not apply. Scenarios
+    are resampled, and both policies' values travel together, so the
+    interval describes the difference and not two independent means.
+
+    Parameters
+    ----------
+    first : sequence of float
+        The first policy's per-scenario values.
+    second : sequence of float
+        The second policy's per-scenario values, same order.
+    seed : int
+        Seeded resampling.
+    resamples : int
+        Number of bootstrap resamples (10,000 per section 8).
+
+    Returns
+    -------
+    BootstrapDelta
+        The observed difference and its percentile CI, in points.
+
+    Raises
+    ------
+    ValueError
+        If the two sequences differ in length.
+    """
+    if len(first) != len(second):
+        raise ValueError("paired sequences must be the same length")
+    a = np.asarray(first, dtype=float)
+    b = np.asarray(second, dtype=float)
+    n = len(a)
+    delta = float(a.mean() - b.mean())
+    rng = np.random.default_rng(seed)
+    estimates = np.empty(resamples)
+    # Chunked so peak memory stays flat no matter how many
+    # resamples are asked for.
+    chunk = 250
+    for start in range(0, resamples, chunk):
+        size = min(chunk, resamples - start)
+        index = rng.integers(0, n, size=(size, n))
+        estimates[start : start + size] = (a[index] - b[index]).mean(axis=1)
     low, high = np.percentile(estimates, (2.5, 97.5))
     return BootstrapDelta(
         delta_pp=delta,

@@ -32,6 +32,7 @@ from smallai.evaluate import (
     mcnemar,
     noise_sigma,
     paired_bootstrap_delta,
+    paired_bootstrap_mean_delta,
     score_agent,
     score_tree,
     softmax_confidence,
@@ -247,6 +248,37 @@ def test_bootstrap_is_reproducible_under_its_seed() -> None:
     assert a == b
     c = paired_bootstrap_delta(first, second, seed=4, resamples=200)
     assert a.delta_pp == c.delta_pp  # point estimate is seed-free
+
+
+def test_mean_delta_handles_a_continuous_quantity() -> None:
+    """The measurement-count estimator: the same shape, a continuous pair."""
+    first = [1.0, 2.0, 3.0, 4.0, 5.0]
+    second = [0.0, 1.0, 2.0, 3.0, 4.0]
+    delta = paired_bootstrap_mean_delta(first, second, seed=4, resamples=200)
+    assert delta.delta_pp == pytest.approx(1.0)
+    assert delta.ci_low_pp == pytest.approx(1.0)
+    assert delta.ci_high_pp == pytest.approx(1.0)
+
+
+def test_mean_delta_rejects_unpaired_sequences() -> None:
+    with pytest.raises(ValueError):
+        paired_bootstrap_mean_delta([1.0, 2.0], [1.0], seed=5, resamples=10)
+
+
+def test_mcnemar_survives_thousands_of_discordant_pairs() -> None:
+    """An enlarged split produces counts a float cannot hold.
+
+    The exact binomial tail is computed in integers, so a test with
+    thousands of discordant pairs returns a probability instead of
+    overflowing.
+    """
+    first = [True] * 3700 + [False] * 100
+    second = [False] * 3700 + [True] * 100
+    result = mcnemar(first, second)
+    assert result.first_only == 3700
+    assert result.second_only == 100
+    assert 0.0 <= result.p_value <= 1.0
+    assert result.p_value < 0.001
 
 
 def test_bootstrap_rejects_unpaired_input() -> None:
