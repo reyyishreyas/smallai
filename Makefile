@@ -23,5 +23,5 @@ test:
 all: train eval benchmark
 
 clean:
-	rm -rf data runs reports .pytest_cache .ruff_cache
+	rm -rf data runs .pytest_cache .ruff_cache
 	find . -name "__pycache__" -type d -exec rm -rf {} +
