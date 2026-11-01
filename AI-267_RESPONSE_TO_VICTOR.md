@@ -57,8 +57,6 @@ The SmallAI Decision Model has been built from scratch — pure NumPy, strictly 
 - No external LLM API in inference.
 - No large-scale compute infrastructure.
 
-All maintained.
-
 ---
 
 ## 6. Acceptance Criteria — Detailed Mapping
@@ -159,15 +157,8 @@ The following project documentation files were produced / updated as part of AI-
 - `EXPERIMENT.md` - experiment record.
 - `AI-267_STAGE_A_RESULTS.md`, `AI-267_STAGE_A1_RESULTS.md` - staged acceptance reports.
 - `EXPERIMENT_A1.md` - Stage A.1 experiment record.
-- `DISCORD_MESSAGE_TO_VICTOR.md` - stakeholder-facing message.
-- `reports/journey_q_a1.json`, `reports/poc_a1.json`, `reports/poc_a1.md` - machine-readable / supporting results.
+- Supporting artifacts: `reports/journey_q_a1.json`, `reports/poc_a1.json`, `reports/poc_a1.md` - machine-readable / supporting results.
 
 ---
 
 **Status:** Acceptance (>= +5 pts journey delta) **cleared** - **Verdict:** Met.
-
----
-
-## 14. Next Step
-
-Let me know if you would like this converted into the actual Jira comment for AI-267, or adjusted in tone / length before it is sent.
