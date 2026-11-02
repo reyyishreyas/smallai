@@ -78,3 +78,28 @@ def test_sweep_deterministic():
     for k in a:
         assert a[k]["verdict_rates"] == b[k]["verdict_rates"]
         assert a[k]["mean_sharpness"] == b[k]["mean_sharpness"]
+
+
+def test_load_images_from_dir(tmp_path):
+    from PIL import Image
+
+    for name, val in (("a.png", 0.5), ("b.png", 0.2)):
+        Image.fromarray(np.full((8, 8, 3), round(val * 255), dtype=np.uint8), "RGB").save(tmp_path / name)
+    imgs = sb.load_images_from_dir(tmp_path, n=2)
+    assert imgs.shape[0] == 2
+    assert imgs.shape[1:] == (8, 8, 3)
+    assert imgs.min() >= 0.0 and imgs.max() <= 1.0
+
+
+def test_load_images_from_dir_empty(tmp_path):
+    imgs = sb.load_images_from_dir(tmp_path, n=4)
+    assert imgs.shape[0] == 0
+
+
+def test_run_real_corpus(tmp_path):
+    from PIL import Image
+
+    Image.fromarray(np.full((8, 8, 3), 128, dtype=np.uint8), "RGB").save(tmp_path / "a.png")
+    stats = sb.run_real_corpus(tmp_path, n=1)
+    assert stats["n_images"] == 1
+    assert set(stats["verdict_rates"]) == {"RETAKE", "REVIEW", "PASS"}

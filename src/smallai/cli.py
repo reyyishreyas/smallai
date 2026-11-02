@@ -1,4 +1,4 @@
-"""CLI: python -m smallai {generate,train,evaluate,benchmark,predict} [--config ...]"""
+"""CLI: python -m smallai {generate,train,evaluate,benchmark,predict,stage-b} [--config ...]"""
 from __future__ import annotations
 
 import argparse
@@ -12,6 +12,7 @@ from . import benchmark as bench_mod
 from . import config as cfg_mod
 from . import evaluate as eval_mod
 from . import runs as runs_mod
+from . import stage_b as stage_b_mod
 from .env import oracle
 from .model import SmallAIModel
 
@@ -104,7 +105,7 @@ def _cmd_predict(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="smallai", description=__doc__)
-    parser.add_argument("command", choices=["generate", "train", "evaluate", "benchmark", "predict"])
+    parser.add_argument("command", choices=["generate", "train", "evaluate", "benchmark", "predict", "stage-b"])
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--seed", type=int, default=None, help="override the config seed")
     parser.add_argument("--epochs", type=int, default=None)
@@ -117,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="JSON file with one feature array per row: "
                              "[[batt,wind,temp,gps,link,payload,dist,sensor,hour,terrain], ...] "
                              "(missing keys default to 0)")
+    parser.add_argument("--images-dir", type=str, default=None,
+                        help="directory of real images for the stage-b offline gate "
+                             "(e.g. data/prescriptions)")
+    parser.add_argument("--n", type=int, default=None,
+                        help="max real images to evaluate in the stage-b gate")
     args = parser.parse_args(argv)
 
     cfg, root = cfg_mod.load_config(args.config)
@@ -148,6 +154,13 @@ def main(argv: list[str] | None = None) -> int:
             _log("--input is required for the predict command (JSON feature rows)")
             return 2
         return _cmd_predict(args)
+    if args.command == "stage-b":
+        if args.images_dir is None:
+            _log("--images-dir is required for the stage-b command (directory of real images)")
+            return 2
+        stats = stage_b_mod.run_real_corpus(args.images_dir, n=args.n)
+        print(json.dumps(stats, indent=2, default=float))
+        return 0
     return 1
 
 

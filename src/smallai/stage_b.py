@@ -16,8 +16,14 @@ The experiment is deterministic (fixed seeds) and fully NumPy — no CV/ML
 libraries, no GPU, no LLM. The verdict contract (RETAKE | REVIEW | PASS) is the
 stable interface the Android / Kotlin runtime will consume; OCR and content
 verification stay out of scope for this stage.
+
+Real corpora (e.g. the synthetic medical prescription OCR images mirrored at
+`chinmays18/medical-prescription-dataset`) are supported through
+`load_images_from_dir` / `run_real_corpus`.
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 
@@ -118,7 +124,54 @@ def run_sweep(
     return results
 
 
+def run_real_corpus(directory: str | Path, n: int | None = None) -> dict:
+    """Run the offline quality gate over real images in a directory.
+
+    Used with real-world corpora such as the synthetic medical prescription
+    OCR images (Kaggle `priyanshuyav13/synthetic-medical-prescription-ocr-dataset`,
+    mirrored at `chinmays18/medical-prescription-dataset`). Returns per-image
+    verdict rates and mean quality signals for the captured images.
+    """
+    imgs = load_images_from_dir(directory, n=n)
+    if imgs.shape[0] == 0:
+        return {"n_images": 0, "verdict_rates": verdict_distribution(np.zeros(0, dtype=np.int64)),
+                "mean_sharpness": float("nan"), "mean_brightness": float("nan"), "mean_exposure": float("nan")}
+    verdicts = iq.decide_offline(imgs)
+    sig = iq.extract(imgs)
+    return {
+        "n_images": int(imgs.shape[0]),
+        "verdict_rates": verdict_distribution(verdicts),
+        "mean_sharpness": float(np.mean(sig["sharpness"])),
+        "mean_brightness": float(np.mean(sig["brightness"])),
+        "mean_exposure": float(np.mean(sig["exposure"])),
+    }
+
+
 def verdict_distribution(verdicts: np.ndarray) -> dict[str, float]:
     """Return the fraction of RETAKE / REVIEW / PASS verdicts."""
     v = np.asarray(verdicts).reshape(-1)
     return {name: float(np.mean(v == idx)) for idx, name in enumerate(DECISION_NAMES)}
+
+
+def load_images_from_dir(directory: str | Path, pattern: str = "*.png", n: int | None = None) -> np.ndarray:
+    """Load images from a directory (sorted by name) -> (N, H, W, 3) float in [0, 1].
+
+    Uses Pillow only for IO; all quality math stays pure NumPy. `n` truncates
+    the batch to the first N images (after sorting).
+    """
+    from PIL import Image
+
+    d = Path(directory)
+    files = sorted(d.glob(pattern))
+    if n is not None:
+        files = files[:n]
+    imgs: list[np.ndarray] = []
+    for f in files:
+        with Image.open(f) as im:
+            arr = np.asarray(im.convert("RGB"), dtype=np.float64) / 255.0
+        if arr.ndim == 2:
+            arr = np.stack([arr] * 3, axis=-1)
+        imgs.append(arr)
+    if not imgs:
+        return np.zeros((0, 32, 32, 3), dtype=np.float64)
+    return np.stack(imgs, axis=0)

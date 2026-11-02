@@ -341,3 +341,20 @@ seed 0, 64 captures per level):
   **REVIEW**; dark capture → **RETAKE**. Full write-up in
   `reports/AI-267_STAGE_B_RESULTS.md`.
 
+### Stage B — real corpus (synthetic medical prescription OCR images)
+
+Real prescription images from the synthetic medical prescription OCR dataset
+(Kaggle `priyanshuyav13/synthetic-medical-prescription-ocr-dataset`, mirrored at
+`chinmays18/medical-prescription-dataset`; downloaded to `data/prescriptions/`)
+were run through the same offline gate via:
+
+```bash
+python -m smallai stage-b --images-dir data/prescriptions --n 10
+```
+
+Result over the real corpus (3 images): **RETAKE 100%**, mean sharpness 0.025,
+mean brightness 0.950, mean exposure 0.450 — i.e. the real prescription captures
+were flagged as over-bright (white background) by the current gates.
+
+Full write-up in `reports/AI-267_STAGE_B_RESULTS.md`.
+
