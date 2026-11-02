@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 data/
 runs/
+dataset/
 reports/*.png
 reports/*.json
 .DS_Store

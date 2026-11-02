@@ -311,14 +311,19 @@ signals = iq.extract(images)   # sharpness, contrast, ink_ratio, brightness, exp
 verdict = iq.decide(signals)   # RETAKE | REVIEW | PASS
 ```
 
-The signals are **document-aware** (see the rationale below):
+The signals are **document-aware and resolution-invariant**:
 
+- **Fixed analysis grid.** Every capture is resampled (pure-NumPy bilinear,
+  max side 512, aspect preserved) before measuring, so the signals — and every
+  threshold — transfer across capture devices and pixel sizes.
 - **sharpness** — mean gradient magnitude *inside the ink neighbourhood*
   (1-px dilation of `luma < p90 − 0.25`); text-edge strength, the blur proxy.
   Measuring only where the content is avoids the background dilution that makes
   whole-frame mean gradient useless on paper-dominated documents.
-- **contrast** — `p99.5 − p0.5` of luma (robust luminance range; robust to
-  documents with <1% ink).
+- **contrast** — `bg − p25(ink pixels)`: luminance contrast measured in the
+  ink region, ink-coverage independent (whole-frame `p99.5 − p0.5` only as a
+  no-ink fallback; percentile-rank contrast collapses whenever ink covers fewer
+  pixels than the percentile — verified on real faint-print captures).
 - **ink_ratio** — fraction of pixels darker than `p90 − 0.25`: the "is there
   actually content" detector (blank page / photo of a wall → ~0).
 - **brightness** — mean luma (feeds the too-dark gate).
@@ -326,58 +331,69 @@ The signals are **document-aware** (see the rationale below):
 
 `decide(signals)` maps the signals to a discrete verdict:
 
-- **RETAKE** — unusable: too dark (`brightness < 0.10`), flat (`contrast < 0.10`),
-  no detectable content (`ink_ratio < 0.002`, blank page), or text edges too
-  smeared to read (`sharpness < 0.055`).
+- **RETAKE** — unusable: too dark (`brightness < 0.10`), no detectable content
+  (`ink_ratio < 0.002`, blank page), or text edges too smeared to read
+  (`sharpness < 0.10`).
 - **REVIEW** — usable but borderline (`brightness < 0.25`, `contrast < 0.18`,
-  `ink_ratio < 0.005`, or `sharpness < 0.095`).
+  `ink_ratio < 0.003`, or `sharpness < 0.13`).
 - **PASS** — usable → continue.
 
 There is deliberately **no high-brightness gate**: white paper is the normal
 background of a document capture, and truly blank captures are caught by
 `ink_ratio ≈ 0`. All thresholds are overridable per call.
 
+The thresholds are **supervised-calibrated on the full 2000-image Kaggle
+corpus** (`priyanshuyav13/synthetic-medical-prescription-ocr-dataset`,
+`dataset/images`): normalized sharpness separates the metadata blur labels
+with no class overlap (blurred max 0.092 vs sharp-label floor 0.208), the cuts
+(RETAKE < 0.10, REVIEW < 0.13) sit inside that gap — **zero false RETAKEs on
+all 952 sharp-labelled images, 100% recall on all 199 blurred-labelled ones**.
+
 The policy lives in the offline path only; OCR and content verification
 (expired ID, expected document type, …) stay a separate concern, per the PoC
 scope agreed with the SmallAI/Mifos team. The discrete verdict contract
 (`RETAKE | REVIEW | PASS`) is what gets ported to the Android / Kotlin runtime.
+~21 ms/image extract, streaming memory-flat corpus runner.
 
 ### Stage B measured results (degradation sweep)
 
-Deterministic sweep over a **document-like** synthetic corpus — white paper +
-dashed 1-px handwriting strokes (`stage_b.make_document`), matching the
-real-capture feature space (ink ~1–2% of pixels) — seed 0, 64 captures/level:
+Deterministic sweep over a **document-like** synthetic corpus generated at the
+native analysis-grid size — 512×384 white paper + dashed near-1-px print
+strokes (`stage_b.make_document`), matching the real-capture feature space
+(ink ≈ 0.3–1% of pixels) — seed 0, 64 captures/level:
 
 | Level | RETAKE | REVIEW | PASS | mean sharpness | mean contrast | mean ink | mean brightness |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| none (pristine) | 0.00 | 0.02 | **0.98** | 0.3473 | 0.768 | 0.0099 | 0.872 |
-| blur r=2 | 0.00 | 0.00 | **1.00** | 0.1500 | 0.474 | 0.0156 | 0.871 |
-| blur r=12 | 0.02 | **0.97** | 0.02 | 0.0866 | 0.269 | 0.0065 | 0.871 |
-| exposure ×0.1 | **1.00** | 0.00 | 0.00 | 0.0020 | 0.078 | 0.0000 | 0.087 |
+| none (pristine) | 0.00 | 0.00 | **1.00** | 0.3692 | 0.858 | 0.0059 | 0.875 |
+| blur r=2 | 0.00 | 0.00 | **1.00** | 0.1972 | 0.679 | 0.0082 | 0.876 |
+| blur r=8 | 0.00 | **0.97** | 0.03 | 0.1204 | 0.480 | 0.0092 | 0.876 |
+| exposure ×0.1 | **1.00** | 0.00 | 0.00 | 0.0013 | 0.066 | 0.0000 | 0.087 |
 
-- Pristine captures → **PASS**; mild blur → **PASS**; heavy blur (`r=12`) →
-  **REVIEW**; dark capture → **RETAKE**.
+- Pristine and mild-blur captures → **PASS**; borderline blur (`r=8`) →
+  **REVIEW** (the safety band); dark capture → **RETAKE**.
 
 ### Stage B — real corpus (synthetic medical prescription OCR images)
 
-Real prescription images from the synthetic medical prescription OCR dataset
-(Kaggle `priyanshuyav13/synthetic-medical-prescription-ocr-dataset`, mirrored at
-`chinmays18/medical-prescription-dataset`; 3 images downloaded to
-`data/prescriptions/`, gitignored) were run through the gate via:
+The full 2000-image Kaggle corpus is downloaded to `dataset/images/`
+(gitignored) and run through the gate via the streaming runner:
 
 ```bash
-python -m smallai stage-b --images-dir data/prescriptions --n 10
+python -c "from smallai import stage_b as sb; print(sb.run_real_corpus('dataset/images'))"
+# n_images=2000, ~40 s, flat memory
 ```
 
-Result (n=3): **PASS 100%** — mean sharpness **0.154**, mean contrast **0.460**,
-mean ink ratio **0.0118**, mean brightness 0.950. The genuinely readable
-handwritten prescriptions (dark ink on white paper) now correctly pass; they had
-been mis-flagged RETAKE by the v1 gate (`brightness > 0.88` + whole-frame mean
-gradient), which v2 replaced.
+Result (n=2000): RETAKE **30.65%**, REVIEW 0%, PASS **69.35%** — zero of the
+952 sharp-labelled images are flagged; every blurred-labelled image is
+retaken. The first 3 mirror images (`data/prescriptions/`, 800×1000, visually
+verified readable) all **PASS** (mean sharpness 0.171, mean brightness 0.950);
+controlled degradations behave correctly on them: blur r=2 → **REVIEW** (the
+real-world borderline band), blur r≥4 → **RETAKE**, ×0.3/×0.1 dark →
+**RETAKE**.
 
-Controlled degradations of the same real images behave correctly:
-blur r=2/4 → **REVIEW**, blur r=6/8 → **RETAKE**, ×0.3 dark → **RETAKE**
-(contrast collapse), ×0.1 dark → **RETAKE**.
+Honest caveats (full details in the report): blur labels are soft for 849/2000
+images with inconsistent flagging between metadata rows; the corpus brightness
+range is 0.85–1.15 so the extreme-dark thresholds come from the controlled
+exposure ladder, not the corpus; rotation ±7° is out of Stage B scope.
 
 Full write-up in `reports/AI-267_STAGE_B_RESULTS.md`.
 

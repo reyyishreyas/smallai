@@ -35,18 +35,18 @@ RETAKE, REVIEW, PASS = iq.RETAKE, iq.REVIEW, iq.PASS
 DECISION_NAMES = iq.DECISION_NAMES
 
 # Degradation sweep: (kind, level). kind in {"none", "blur", "noise", "exposure"}.
-# Levels are calibrated against the real prescription corpus: blur r=2 leaves
-# text readable (PASS), blur r=12 is the borderline band (REVIEW), and darkness
-# at 10% exposure is unusable (RETAKE).
+# Levels are calibrated against the real 2000-image prescription corpus: blur
+# r=2 leaves text readable (PASS), blur r=8 sits in the designed borderline
+# band (REVIEW), and darkness at 10% exposure is unusable (RETAKE).
 SWEEP: tuple[tuple[str, float], ...] = (
     ("none", 0.0),
     ("blur", 2.0),
-    ("blur", 12.0),
+    ("blur", 8.0),
     ("exposure", 0.1),
 )
 
-SWEEP_H = 192
-SWEEP_W = 144
+SWEEP_H = 512
+SWEEP_W = 384
 
 
 def make_document(
@@ -54,7 +54,7 @@ def make_document(
     h: int = SWEEP_H,
     w: int = SWEEP_W,
     *,
-    lines_range: tuple[int, int] = (5, 10),
+    lines_range: tuple[int, int] = (6, 11),
     word_len: tuple[float, float] = (0.05, 0.14),
 ) -> np.ndarray:
     """Deterministic document-like capture (H, W, 3), values in [0, 1].
@@ -77,7 +77,7 @@ def make_document(
 
     n_lines = int(rng.integers(lines_range[0], lines_range[1]))
     line_ys = np.linspace(0.10, 0.86, n_lines)
-    ink_lo, ink_hi = 0.05, 0.22
+    ink_lo, ink_hi = 0.02, 0.12
     y_dev = 0.012 * h          # stroke-scale vertical wobble (px)
     for y0 in line_ys:
         # slight line tilt (captures are rarely perfectly axis-aligned)
@@ -96,10 +96,9 @@ def make_document(
             base_y = y0 * h + (y_end - y0) * h * (t / w)
             y_path = base_y + y_dev * np.sin(2 * np.pi * freq * t / w + phase)
             ink_val = rng.uniform(ink_lo, ink_hi)
-            # dashed single-pixel pen: sample the path sparsely (real
-            # handwriting is ~1 px strokes at capture resolution, not solid
-            # bands), with slight pen jitter
-            step = 1.2
+            # dashed near-solid pen: sample the path densely (real print
+            # strokes are ~1 px at capture resolution), with slight pen jitter
+            step = 0.75
             ts = np.arange(x0, x1, step)
             if ts.size == 0:
                 continue
@@ -188,28 +187,47 @@ def run_sweep(
     return results
 
 
-def run_real_corpus(directory: str | Path, n: int | None = None) -> dict:
+def run_real_corpus(directory: str | Path, n: int | None = None,
+                    pattern: str = "*.png") -> dict:
     """Run the offline quality gate over real images in a directory.
 
     Used with real-world corpora such as the synthetic medical prescription
     OCR images (Kaggle `priyanshuyav13/synthetic-medical-prescription-ocr-dataset`,
-    mirrored at `chinmays18/medical-prescription-dataset`). Returns per-image
-    verdict rates and mean quality signals for the captured images.
+    mirrored at `chinmays18/medical-prescription-dataset`). Images are
+    processed **one at a time** — sizes may vary within the corpus and memory
+    stays flat even for thousands of captures. Returns verdict rates and mean
+    quality signals over the (first `n`) images.
     """
-    imgs = load_images_from_dir(directory, n=n)
-    if imgs.shape[0] == 0:
+    from PIL import Image
+
+    d = Path(directory)
+    files = sorted(d.glob(pattern))
+    if n is not None:
+        files = files[:n]
+
+    verdicts: list[int] = []
+    sums = {"sharpness": 0.0, "contrast": 0.0, "ink_ratio": 0.0, "brightness": 0.0}
+    count = 0
+    for f in files:
+        with Image.open(f) as im:
+            arr = np.asarray(im.convert("RGB"), dtype=np.float64) / 255.0
+        sig = iq.extract(arr[None])
+        verdicts.append(int(iq.decide(sig)[0]))
+        for k in sums:
+            sums[k] += float(sig[k][0])
+        count += 1
+
+    if count == 0:
         return {"n_images": 0, "verdict_rates": verdict_distribution(np.zeros(0, dtype=np.int64)),
                 "mean_sharpness": float("nan"), "mean_contrast": float("nan"),
                 "mean_ink_ratio": float("nan"), "mean_brightness": float("nan")}
-    verdicts = iq.decide_offline(imgs)
-    sig = iq.extract(imgs)
     return {
-        "n_images": int(imgs.shape[0]),
-        "verdict_rates": verdict_distribution(verdicts),
-        "mean_sharpness": float(np.mean(sig["sharpness"])),
-        "mean_contrast": float(np.mean(sig["contrast"])),
-        "mean_ink_ratio": float(np.mean(sig["ink_ratio"])),
-        "mean_brightness": float(np.mean(sig["brightness"])),
+        "n_images": count,
+        "verdict_rates": verdict_distribution(np.array(verdicts, dtype=np.int64)),
+        "mean_sharpness": sums["sharpness"] / count,
+        "mean_contrast": sums["contrast"] / count,
+        "mean_ink_ratio": sums["ink_ratio"] / count,
+        "mean_brightness": sums["brightness"] / count,
     }
 
 

@@ -86,8 +86,19 @@ def test_sweep_levels():
     # pristine & mild blur -> PASS; heavy blur -> REVIEW; dark -> RETAKE
     assert res["none:0"]["verdict_rates"]["PASS"] > 0.9
     assert res["blur:2"]["verdict_rates"]["PASS"] > 0.9
-    assert res["blur:12"]["verdict_rates"]["REVIEW"] > 0.9
+    assert res["blur:8"]["verdict_rates"]["REVIEW"] > 0.9
     assert res["exposure:0.1"]["verdict_rates"]["RETAKE"] > 0.9
+
+
+def test_extract_resolution_invariance():
+    # thresholds are calibrated on a fixed analysis grid, so the same content
+    # captured at a different scale must produce (near-)identical signals
+    img = sb.make_document(np.random.default_rng(3))[None]
+    big = np.repeat(np.repeat(img, 2, axis=1), 2, axis=2)  # 2x capture scale
+    s1 = iq.extract(img)
+    s2 = iq.extract(big)
+    assert iq.verdict_name(iq.decide(s1)[0]) == iq.verdict_name(iq.decide(s2)[0])
+    assert abs(float(s1["sharpness"][0]) - float(s2["sharpness"][0])) < 0.2 * abs(float(s1["sharpness"][0]))
 
 
 def test_sweep_deterministic():
@@ -107,6 +118,13 @@ def test_make_document_deterministic():
     # paper-dominated frame with visible ink, in [0, 1]
     assert a.min() >= 0.0 and a.max() <= 1.0
     assert a.mean() > 0.6  # paper background dominates
+
+
+def test_make_document_passes_gate():
+    # pristine synthetic documents should land in the usable band
+    verdicts = [int(iq.decide_offline(sb.make_document(np.random.default_rng(i))[None])[0])
+                for i in range(8)]
+    assert all(v == iq.PASS for v in verdicts)
 
 
 def test_load_images_from_dir(tmp_path):
@@ -134,3 +152,15 @@ def test_run_real_corpus(tmp_path):
     assert set(stats["verdict_rates"]) == {"RETAKE", "REVIEW", "PASS"}
     assert set(stats) >= {"n_images", "verdict_rates", "mean_sharpness", "mean_contrast",
                           "mean_ink_ratio", "mean_brightness"}
+
+
+def test_run_real_corpus_mixed_sizes(tmp_path):
+    # real corpora have varying capture sizes: the runner must stream images
+    # one at a time instead of stacking a uniform batch
+    from PIL import Image
+
+    Image.fromarray(np.full((20, 30, 3), 235, dtype=np.uint8), "RGB").save(tmp_path / "a.png")
+    Image.fromarray(np.full((12, 16, 3), 235, dtype=np.uint8), "RGB").save(tmp_path / "b.png")
+    stats = sb.run_real_corpus(tmp_path)
+    assert stats["n_images"] == 2
+    assert set(stats["verdict_rates"]) == {"RETAKE", "REVIEW", "PASS"}
