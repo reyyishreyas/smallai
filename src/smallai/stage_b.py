@@ -21,7 +21,9 @@ verification stay out of scope for this stage.
 
 Real corpora (e.g. the synthetic medical prescription OCR images mirrored at
 `chinmays18/medical-prescription-dataset`) are supported through
-`load_images_from_dir` / `run_real_corpus`.
+`load_images_from_dir` / `run_real_corpus`; arbitrary single/multi images
+(any format Pillow opens) go through `check_images` (also exposed as the
+CLI `quality` command: `python -m smallai quality --image <file-or-dir>`).
 """
 from __future__ import annotations
 
@@ -235,6 +237,87 @@ def verdict_distribution(verdicts: np.ndarray) -> dict[str, float]:
     """Return the fraction of RETAKE / REVIEW / PASS verdicts."""
     v = np.asarray(verdicts).reshape(-1)
     return {name: float(np.mean(v == idx)) for idx, name in enumerate(DECISION_NAMES)}
+
+
+def _gate_reasons(sig: dict[str, np.ndarray]) -> list[str]:
+    """Human-readable gate attribution for one image (why not PASS).
+
+    Mirrors the `decide` logic on the default thresholds and returns the
+    violated gate conditions in evaluation order (RETAKE reasons first).
+    """
+    s = {k: float(np.asarray(v).reshape(-1)[0]) for k, v in sig.items()}
+    reasons = []
+    if s["brightness"] < iq.RETAKE_BRIGHT_MIN:
+        reasons.append(f"too dark (brightness {s['brightness']:.3f} "
+                       f"< {iq.RETAKE_BRIGHT_MIN})")
+    if s["ink_ratio"] < iq.RETAKE_INK_MIN:
+        reasons.append(f"no readable content (ink_ratio {s['ink_ratio']:.4f} "
+                       f"< {iq.RETAKE_INK_MIN})")
+    if s["sharpness"] < iq.RETAKE_SHARP_MIN:
+        reasons.append(f"unreadably blurry (sharpness {s['sharpness']:.3f} "
+                       f"< {iq.RETAKE_SHARP_MIN})")
+    if reasons:
+        return reasons  # RETAKE short-circuits; REVIEW reasons below
+    if s["brightness"] < iq.REVIEW_BRIGHT_MIN:
+        reasons.append(f"dim (brightness {s['brightness']:.3f} "
+                       f"< {iq.REVIEW_BRIGHT_MIN})")
+    if s["contrast"] < iq.REVIEW_CONTRAST_MIN:
+        reasons.append(f"washed-out print (contrast {s['contrast']:.3f} "
+                       f"< {iq.REVIEW_CONTRAST_MIN})")
+    if s["ink_ratio"] < iq.REVIEW_INK_MIN:
+        reasons.append(f"sparse content (ink_ratio {s['ink_ratio']:.4f} "
+                       f"< {iq.REVIEW_INK_MIN})")
+    if s["sharpness"] < iq.REVIEW_SHARP_MIN:
+        reasons.append(f"soft text edges / mild blur (sharpness {s['sharpness']:.3f} "
+                       f"< {iq.REVIEW_SHARP_MIN})")
+    return reasons
+
+
+def check_images(paths: list[str | Path]) -> list[dict]:
+    """Quality-check arbitrary image files with the offline gate.
+
+    Accepts any format/size Pillow can open (PNG/JPG/JPEG/WEBP/BMP/TIFF/GIF;
+    iPhone HEIC if `pillow-heif` is installed). Each image is loaded, converted
+    to RGB, resampled onto the fixed analysis grid, and scored by the same
+    supervised gate as the corpus runner.
+
+    Returns one dict per input path:
+      {path, size, signals{sharpness, contrast, ink_ratio, brightness, exposure},
+       verdict ("RETAKE"|"REVIEW"|"PASS"), reasons [...]}
+    or {path, error} when the file cannot be read.
+    """
+    from PIL import Image
+
+    try:  # optional iPhone-HEIC support; silently skipped if not installed
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:
+        pass
+
+    out: list[dict] = []
+    for p in paths:
+        path = Path(p).expanduser()
+        if not path.is_file():
+            out.append({"path": str(path), "error": "not a file"})
+            continue
+        try:
+            with Image.open(path) as im:
+                w, h = im.size
+                arr = np.asarray(im.convert("RGB"), dtype=np.float64) / 255.0
+        except (OSError, ValueError) as e:
+            out.append({"path": str(path), "error": str(e)})
+            continue
+        sig = iq.extract(arr[None])
+        verdict = iq.verdict_name(int(iq.decide(sig)[0]))
+        out.append({
+            "path": str(path),
+            "size": [w, h],
+            "signals": {k: round(float(sig[k][0]), 6) for k in
+                        ("sharpness", "contrast", "ink_ratio", "brightness", "exposure")},
+            "verdict": verdict,
+            "reasons": [] if verdict == "PASS" else _gate_reasons(sig),
+        })
+    return out
 
 
 def load_images_from_dir(directory: str | Path, pattern: str = "*.png", n: int | None = None) -> np.ndarray:

@@ -164,3 +164,34 @@ def test_run_real_corpus_mixed_sizes(tmp_path):
     stats = sb.run_real_corpus(tmp_path)
     assert stats["n_images"] == 2
     assert set(stats["verdict_rates"]) == {"RETAKE", "REVIEW", "PASS"}
+
+
+def test_check_images(tmp_path):
+    # check_images is the arbitrary-file input path: any format Pillow reads,
+    # per-image verdict + missing-gate reasons + error resilience
+    from PIL import Image
+
+    doc = (sb.make_document(np.random.default_rng(1)) * 255).astype(np.uint8)
+    p_doc = tmp_path / "doc.png"
+    Image.fromarray(doc, "RGB").save(p_doc)
+    p_blank = tmp_path / "blank.jpg"  # blank page -> RETAKE via ink_ratio
+    Image.fromarray(np.full((200, 300, 3), 245, dtype=np.uint8), "RGB").save(p_blank)
+    p_gray = tmp_path / "gray.png"    # single-channel (L-mode) file
+    Image.fromarray(np.full((100, 140), 30, dtype=np.uint8), "L").save(p_gray)
+
+    res = sb.check_images([p_doc, p_blank, p_gray, tmp_path / "missing.png"])
+    assert len(res) == 4
+
+    r_doc = res[0]
+    assert r_doc["verdict"] == "PASS" and r_doc["reasons"] == []
+    assert r_doc["size"] == [384, 512]  # (w, h) of the synthetic doc
+    assert set(r_doc["signals"]) == {"sharpness", "contrast", "ink_ratio",
+                                     "brightness", "exposure"}
+
+    r_blank = res[1]
+    assert r_blank["verdict"] == "RETAKE"
+    assert any("no readable content" in r for r in r_blank["reasons"])
+    assert r_blank["size"] == [300, 200]
+
+    assert res[2]["verdict"] == "RETAKE"  # grayscale input works like RGB
+    assert "error" in res[3]  # missing file -> error entry, no crash

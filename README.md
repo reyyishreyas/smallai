@@ -372,6 +372,34 @@ strokes (`stage_b.make_document`), matching the real-capture feature space
 - Pristine and mild-blur captures → **PASS**; borderline blur (`r=8`) →
   **REVIEW** (the safety band); dark capture → **RETAKE**.
 
+### Run it on any image
+
+The `quality` command scores **any** image file (any format/size Pillow opens —
+PNG, JPG, WEBP, TIFF, …; iPhone HEIC too if `pip install pillow-heif` is run)
+or a whole folder of them, and reports the verdict plus the exact gates that
+tripped:
+
+```bash
+python -m smallai quality --image shot.jpg                 # one photo
+python -m smallai quality --image shot1.jpg shot2.png     # several
+python -m smallai quality --image ~/Downloads/photo-dump/ # a whole folder
+python -m smallai quality --image shot.jpg --json         # machine-readable
+```
+
+```
+shot.jpg  4032×3024px
+  VERDICT: RETAKE
+    sharpness  0.084
+    contrast   0.471
+    ink_ratio  0.0059
+    brightness 0.951
+    ⚠ unreadably blurry (sharpness 0.084 < 0.10)
+```
+
+Sizing/resolution doesn't matter (everything is measured on the fixed analysis
+grid); a non-image file or unreadable path comes back as an `ERROR` entry
+instead of crashing the batch.
+
 ### Stage B — real corpus (synthetic medical prescription OCR images)
 
 The full 2000-image Kaggle corpus is downloaded to `dataset/images/`
