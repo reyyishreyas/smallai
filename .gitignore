@@ -9,3 +9,4 @@ dataset/
 reports/*.png
 reports/*.json
 .DS_Store
+*.egg-info/
