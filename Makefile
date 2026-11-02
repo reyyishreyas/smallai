@@ -18,7 +18,7 @@ benchmark:
 	.venv/bin/python -m smallai benchmark --config configs/default.yaml
 
 test:
-	.venv/bin/python -m pytest tests -q
+	PYTHONPATH=src .venv/bin/python -m pytest tests -q
 
 all: train eval benchmark
 

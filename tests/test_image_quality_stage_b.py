@@ -194,4 +194,4 @@ def test_check_images(tmp_path):
     assert r_blank["size"] == [300, 200]
 
     assert res[2]["verdict"] == "RETAKE"  # grayscale input works like RGB
-    assert "error" in res[3]  # missing file -> error entry, no crash
+    assert "file not found" in res[3]["error"]  # missing file -> error entry, no crash

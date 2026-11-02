@@ -297,15 +297,23 @@ def check_images(paths: list[str | Path]) -> list[dict]:
     out: list[dict] = []
     for p in paths:
         path = Path(p).expanduser()
+        if path.is_dir():
+            out.append({"path": str(path),
+                        "error": "is a directory — pass its files directly "
+                                 "(folders are expanded by the CLI 'quality' command)"})
+            continue
+        if not path.exists():
+            out.append({"path": str(path), "error": "file not found"})
+            continue
         if not path.is_file():
-            out.append({"path": str(path), "error": "not a file"})
+            out.append({"path": str(path), "error": "not a regular file"})
             continue
         try:
             with Image.open(path) as im:
                 w, h = im.size
                 arr = np.asarray(im.convert("RGB"), dtype=np.float64) / 255.0
         except (OSError, ValueError) as e:
-            out.append({"path": str(path), "error": str(e)})
+            out.append({"path": str(path), "error": f"unreadable image ({e})"})
             continue
         sig = iq.extract(arr[None])
         verdict = iq.verdict_name(int(iq.decide(sig)[0]))
