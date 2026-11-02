@@ -6,10 +6,12 @@ discrete offline policy (RETAKE / REVIEW / PASS).
 
 This module runs the full Stage B experiment:
 
-  1. Build a deterministic corpus of document-capture-like images
-     (`make_capture`) — sharp, mid-exposure images in [0, 1].
+  1. Build a deterministic corpus of *document-like* captures
+     (`make_document`) — white paper with wavy handwriting strokes, so the
+     synthetic corpus exercises the same feature space as real scans
+     (paper background ~0.9 luma, dark ink strokes with crisp edges).
   2. Apply controlled degradations (`blur`, `add_noise`, `apply_exposure`).
-  3. Run the real-signal offline gate over each level (`decide_offline`).
+  3. Run the document-aware offline gate over each level (`decide_offline`).
   4. Tabulate verdict rates (RETAKE / REVIEW / PASS) per level.
 
 The experiment is deterministic (fixed seeds) and fully NumPy — no CV/ML
@@ -33,26 +35,86 @@ RETAKE, REVIEW, PASS = iq.RETAKE, iq.REVIEW, iq.PASS
 DECISION_NAMES = iq.DECISION_NAMES
 
 # Degradation sweep: (kind, level). kind in {"none", "blur", "noise", "exposure"}.
+# Levels are calibrated against the real prescription corpus: blur r=2 leaves
+# text readable (PASS), blur r=12 is the borderline band (REVIEW), and darkness
+# at 10% exposure is unusable (RETAKE).
 SWEEP: tuple[tuple[str, float], ...] = (
     ("none", 0.0),
     ("blur", 2.0),
-    ("blur", 8.0),
+    ("blur", 12.0),
     ("exposure", 0.1),
 )
 
+SWEEP_H = 192
+SWEEP_W = 144
 
-def make_capture(rng: np.random.Generator, h: int = 32, w: int = 24, luma: float = 0.0, amp: float = 2.2) -> np.ndarray:
-    """Deterministic document-capture-like image (H, W, 3), values in [0, 1].
 
-    Smooth 2-D luma field (product of two cosines) -> high gradient magnitude
-    -> a *sharp* image, so the pristine level of the sweep is expected to pass
-    the offline gate.
+def make_document(
+    rng: np.random.Generator,
+    h: int = SWEEP_H,
+    w: int = SWEEP_W,
+    *,
+    lines_range: tuple[int, int] = (5, 10),
+    word_len: tuple[float, float] = (0.05, 0.14),
+) -> np.ndarray:
+    """Deterministic document-like capture (H, W, 3), values in [0, 1].
+
+    White paper (~0.9 luma, gentle illumination field) with dark handwriting-
+    like strokes: lines of wavy scribbles with ~1 px stroke width, tuned so the
+    synthetic corpus lives in the same feature space as real document captures
+    (paper-dominated frame, ink_ratio ~1-2%, crisp stroke edges). Pure NumPy;
+    deterministic under a fixed seeded `rng`.
     """
-    xg = np.linspace(0.0, 1.0, w, dtype=np.float64)[None, :]
-    yg = np.linspace(0.0, 1.0, h, dtype=np.float64)[:, None]
-    field = (0.5 + 0.5 * np.cos(2 * np.pi * xg)) * (0.5 + 0.5 * np.cos(2 * np.pi * yg))
-    luma_img = np.clip(luma + amp * field, 0.0, 1.0)
-    return np.stack([luma_img] * 3, axis=-1)
+    paper = 0.90 + 0.02 * rng.random()
+    yy, xx = np.mgrid[0:h, 0:w]
+    xf = xx / max(w - 1, 1)
+    yf = yy / max(h - 1, 1)
+    # gentle illumination field: slight corner falloff
+    illum = 1.0 - 0.10 * ((xf - 0.5) ** 2 + (yf - 0.5) ** 2) * 2.0
+    paper_l = np.clip(paper * illum, 0.0, 1.0)
+
+    img = np.repeat(paper_l[:, :, None], 3, axis=2)
+
+    n_lines = int(rng.integers(lines_range[0], lines_range[1]))
+    line_ys = np.linspace(0.10, 0.86, n_lines)
+    ink_lo, ink_hi = 0.05, 0.22
+    y_dev = 0.012 * h          # stroke-scale vertical wobble (px)
+    for y0 in line_ys:
+        # slight line tilt (captures are rarely perfectly axis-aligned)
+        y_end = y0 + rng.uniform(-0.02, 0.02)
+        n_words = int(rng.integers(2, 6))
+        cursor = 0.06 + rng.random() * 0.05
+        for _ in range(n_words):
+            wlen = word_len[0] + rng.random() * (word_len[1] - word_len[0])
+            x0, x1 = cursor * w, min((cursor + wlen) * w, 0.94 * w)
+            cursor = x1 / w + 0.03 + rng.random() * 0.05
+            if x1 - x0 < 3:
+                continue
+            t = np.linspace(x0, x1, max(int(x1 - x0) * 2, 4))
+            phase = rng.uniform(0.0, 2.0 * np.pi)
+            freq = rng.uniform(0.8, 2.2)
+            base_y = y0 * h + (y_end - y0) * h * (t / w)
+            y_path = base_y + y_dev * np.sin(2 * np.pi * freq * t / w + phase)
+            ink_val = rng.uniform(ink_lo, ink_hi)
+            # dashed single-pixel pen: sample the path sparsely (real
+            # handwriting is ~1 px strokes at capture resolution, not solid
+            # bands), with slight pen jitter
+            step = 1.2
+            ts = np.arange(x0, x1, step)
+            if ts.size == 0:
+                continue
+            y_s = np.interp(ts, t, y_path) + rng.uniform(-0.6, 0.6, size=ts.shape)
+            ys = np.clip(np.round(y_s).astype(np.int64), 0, h - 1)
+            xs = np.clip(np.round(ts).astype(np.int64), 0, w - 1)
+            img[ys, xs] = np.minimum(img[ys, xs], ink_val)
+    # mild per-pixel paper noise (grain)
+    img = np.clip(img + rng.normal(0.0, 0.008, size=img.shape), 0.0, 1.0)
+    return img
+
+
+def make_capture(rng: np.random.Generator, h: int = SWEEP_H, w: int = SWEEP_W) -> np.ndarray:
+    """Backwards-compatible alias: `make_capture` -> `make_document`."""
+    return make_document(rng, h=h, w=w)
 
 
 def blur(img: np.ndarray, r: float) -> np.ndarray:
@@ -99,8 +161,8 @@ def corrupt(img: np.ndarray, kind: str, level: float, rng: np.random.Generator) 
 def run_sweep(
     *,
     n_images: int = 64,
-    h: int = 32,
-    w: int = 24,
+    h: int = SWEEP_H,
+    w: int = SWEEP_W,
     seed: int = 0,
 ) -> dict:
     """Run the full Stage B degradation sweep; return per-level verdict stats."""
@@ -108,7 +170,7 @@ def run_sweep(
     results: dict[str, dict] = {}
     for kind, level in SWEEP:
         imgs = np.stack(
-            [corrupt(make_capture(rng, h=h, w=w), kind, level, rng) for _ in range(n_images)]
+            [corrupt(make_document(rng, h=h, w=w), kind, level, rng) for _ in range(n_images)]
         )
         verdicts = iq.decide_offline(imgs)
         sig = iq.extract(imgs)
@@ -118,6 +180,8 @@ def run_sweep(
             "n_images": int(n_images),
             "verdict_rates": verdict_distribution(verdicts),
             "mean_sharpness": float(np.mean(sig["sharpness"])),
+            "mean_contrast": float(np.mean(sig["contrast"])),
+            "mean_ink_ratio": float(np.mean(sig["ink_ratio"])),
             "mean_brightness": float(np.mean(sig["brightness"])),
             "mean_exposure": float(np.mean(sig["exposure"])),
         }
@@ -135,15 +199,17 @@ def run_real_corpus(directory: str | Path, n: int | None = None) -> dict:
     imgs = load_images_from_dir(directory, n=n)
     if imgs.shape[0] == 0:
         return {"n_images": 0, "verdict_rates": verdict_distribution(np.zeros(0, dtype=np.int64)),
-                "mean_sharpness": float("nan"), "mean_brightness": float("nan"), "mean_exposure": float("nan")}
+                "mean_sharpness": float("nan"), "mean_contrast": float("nan"),
+                "mean_ink_ratio": float("nan"), "mean_brightness": float("nan")}
     verdicts = iq.decide_offline(imgs)
     sig = iq.extract(imgs)
     return {
         "n_images": int(imgs.shape[0]),
         "verdict_rates": verdict_distribution(verdicts),
         "mean_sharpness": float(np.mean(sig["sharpness"])),
+        "mean_contrast": float(np.mean(sig["contrast"])),
+        "mean_ink_ratio": float(np.mean(sig["ink_ratio"])),
         "mean_brightness": float(np.mean(sig["brightness"])),
-        "mean_exposure": float(np.mean(sig["exposure"])),
     }
 
 

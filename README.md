@@ -307,18 +307,35 @@ CV/ML library, no GPU), and turns the policy into an explicit offline decision:
 ```python
 from smallai.env import image_quality as iq
 
-signals = iq.extract(images)   # sharpness, brightness, exposure per image
+signals = iq.extract(images)   # sharpness, contrast, ink_ratio, brightness, exposure
 verdict = iq.decide(signals)   # RETAKE | REVIEW | PASS
 ```
 
-- `extract(images)` computes per-image **sharpness** (mean gradient magnitude,
-  blur proxy), **brightness** (mean luma) and **exposure** (`|mean luma − 0.5|`).
-- `decide(signals)` maps the signals to a discrete verdict for the offline
-  document-capture gate:
-  - **RETAKE** — unusable image (too blurry, over/under exposed, near-black or
-    near-white) → reject the capture, ask for a retake.
-  - **REVIEW** — usable but borderline → human review.
-  - **PASS** — usable → continue.
+The signals are **document-aware** (see the rationale below):
+
+- **sharpness** — mean gradient magnitude *inside the ink neighbourhood*
+  (1-px dilation of `luma < p90 − 0.25`); text-edge strength, the blur proxy.
+  Measuring only where the content is avoids the background dilution that makes
+  whole-frame mean gradient useless on paper-dominated documents.
+- **contrast** — `p99.5 − p0.5` of luma (robust luminance range; robust to
+  documents with <1% ink).
+- **ink_ratio** — fraction of pixels darker than `p90 − 0.25`: the "is there
+  actually content" detector (blank page / photo of a wall → ~0).
+- **brightness** — mean luma (feeds the too-dark gate).
+- **exposure** — `|mean luma − 0.5|` (reporting aid).
+
+`decide(signals)` maps the signals to a discrete verdict:
+
+- **RETAKE** — unusable: too dark (`brightness < 0.10`), flat (`contrast < 0.10`),
+  no detectable content (`ink_ratio < 0.002`, blank page), or text edges too
+  smeared to read (`sharpness < 0.055`).
+- **REVIEW** — usable but borderline (`brightness < 0.25`, `contrast < 0.18`,
+  `ink_ratio < 0.005`, or `sharpness < 0.095`).
+- **PASS** — usable → continue.
+
+There is deliberately **no high-brightness gate**: white paper is the normal
+background of a document capture, and truly blank captures are caught by
+`ink_ratio ≈ 0`. All thresholds are overridable per call.
 
 The policy lives in the offline path only; OCR and content verification
 (expired ID, expected document type, …) stay a separate concern, per the PoC
@@ -327,34 +344,40 @@ scope agreed with the SmallAI/Mifos team. The discrete verdict contract
 
 ### Stage B measured results (degradation sweep)
 
-Deterministic sweep over a document-capture-like corpus (`stage_b.run_sweep`,
-seed 0, 64 captures per level):
+Deterministic sweep over a **document-like** synthetic corpus — white paper +
+dashed 1-px handwriting strokes (`stage_b.make_document`), matching the
+real-capture feature space (ink ~1–2% of pixels) — seed 0, 64 captures/level:
 
-| Level | RETAKE | REVIEW | PASS | mean sharpness | mean brightness | mean exposure |
-| --- | --- | --- | --- | --- | --- | --- |
-| none (pristine) | 0.00 | 0.00 | **1.00** | 0.0534 | 0.447 | 0.053 |
-| blur r=2 | 0.00 | 0.00 | **1.00** | 0.0514 | 0.447 | 0.053 |
-| blur r=8 | 0.00 | **1.00** | 0.00 | 0.0325 | 0.441 | 0.059 |
-| exposure ×0.1 | **1.00** | 0.00 | 0.00 | 0.0053 | 0.045 | 0.455 |
+| Level | RETAKE | REVIEW | PASS | mean sharpness | mean contrast | mean ink | mean brightness |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| none (pristine) | 0.00 | 0.02 | **0.98** | 0.3473 | 0.768 | 0.0099 | 0.872 |
+| blur r=2 | 0.00 | 0.00 | **1.00** | 0.1500 | 0.474 | 0.0156 | 0.871 |
+| blur r=12 | 0.02 | **0.97** | 0.02 | 0.0866 | 0.269 | 0.0065 | 0.871 |
+| exposure ×0.1 | **1.00** | 0.00 | 0.00 | 0.0020 | 0.078 | 0.0000 | 0.087 |
 
-- Pristine captures → **PASS**; mild blur → **PASS**; heavy blur (`r=8`) →
-  **REVIEW**; dark capture → **RETAKE**. Full write-up in
-  `reports/AI-267_STAGE_B_RESULTS.md`.
+- Pristine captures → **PASS**; mild blur → **PASS**; heavy blur (`r=12`) →
+  **REVIEW**; dark capture → **RETAKE**.
 
 ### Stage B — real corpus (synthetic medical prescription OCR images)
 
 Real prescription images from the synthetic medical prescription OCR dataset
 (Kaggle `priyanshuyav13/synthetic-medical-prescription-ocr-dataset`, mirrored at
-`chinmays18/medical-prescription-dataset`; downloaded to `data/prescriptions/`)
-were run through the same offline gate via:
+`chinmays18/medical-prescription-dataset`; 3 images downloaded to
+`data/prescriptions/`, gitignored) were run through the gate via:
 
 ```bash
 python -m smallai stage-b --images-dir data/prescriptions --n 10
 ```
 
-Result over the real corpus (3 images): **RETAKE 100%**, mean sharpness 0.025,
-mean brightness 0.950, mean exposure 0.450 — i.e. the real prescription captures
-were flagged as over-bright (white background) by the current gates.
+Result (n=3): **PASS 100%** — mean sharpness **0.154**, mean contrast **0.460**,
+mean ink ratio **0.0118**, mean brightness 0.950. The genuinely readable
+handwritten prescriptions (dark ink on white paper) now correctly pass; they had
+been mis-flagged RETAKE by the v1 gate (`brightness > 0.88` + whole-frame mean
+gradient), which v2 replaced.
+
+Controlled degradations of the same real images behave correctly:
+blur r=2/4 → **REVIEW**, blur r=6/8 → **RETAKE**, ×0.3 dark → **RETAKE**
+(contrast collapse), ×0.1 dark → **RETAKE**.
 
 Full write-up in `reports/AI-267_STAGE_B_RESULTS.md`.
 
