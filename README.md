@@ -324,3 +324,20 @@ The policy lives in the offline path only; OCR and content verification
 (expired ID, expected document type, …) stay a separate concern, per the PoC
 scope agreed with the SmallAI/Mifos team. The discrete verdict contract
 (`RETAKE | REVIEW | PASS`) is what gets ported to the Android / Kotlin runtime.
+
+### Stage B measured results (degradation sweep)
+
+Deterministic sweep over a document-capture-like corpus (`stage_b.run_sweep`,
+seed 0, 64 captures per level):
+
+| Level | RETAKE | REVIEW | PASS | mean sharpness | mean brightness | mean exposure |
+| --- | --- | --- | --- | --- | --- | --- |
+| none (pristine) | 0.00 | 0.00 | **1.00** | 0.0534 | 0.447 | 0.053 |
+| blur r=2 | 0.00 | 0.00 | **1.00** | 0.0514 | 0.447 | 0.053 |
+| blur r=8 | 0.00 | **1.00** | 0.00 | 0.0325 | 0.441 | 0.059 |
+| exposure ×0.1 | **1.00** | 0.00 | 0.00 | 0.0053 | 0.045 | 0.455 |
+
+- Pristine captures → **PASS**; mild blur → **PASS**; heavy blur (`r=8`) →
+  **REVIEW**; dark capture → **RETAKE**. Full write-up in
+  `reports/AI-267_STAGE_B_RESULTS.md`.
+
