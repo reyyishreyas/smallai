@@ -1,4 +1,4 @@
-"""CLI: python -m smallai {generate,train,evaluate,benchmark,predict,stage-b,quality} [--config ...]"""
+"""CLI: python -m smallai {generate,train,evaluate,benchmark,predict,stage-b,quality,qgate} [--config ...]"""
 from __future__ import annotations
 
 import argparse
@@ -64,6 +64,29 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff",
                   ".gif", ".heic", ".heif"}
 
 
+def _quality_file_list(image_args: list | None) -> list[Path]:
+    """Expand --image groups (files or folders, repeatable) into a flat list.
+
+    Raises ValueError when a folder has no supported image files (the CLI
+    handlers turn that into exit code 2 with a readable message).
+    """
+    files: list[Path] = []
+    for group in image_args or []:
+        entries = group if isinstance(group, (list, tuple)) else [group]
+        for item in entries:
+            p = Path(item).expanduser()
+            if p.is_dir():
+                found = sorted(f for f in p.iterdir()
+                               if f.suffix.lower() in IMAGE_SUFFIXES)
+                if not found:
+                    raise ValueError(
+                        f"no image files in {p} (supported: png/jpg/jpeg/webp/bmp/tif/gif[/heic])")
+                files.extend(found)
+            else:
+                files.append(p)
+    return files
+
+
 def _cmd_quality(args) -> int:
     """Quality-check arbitrary image files (single, several, or directories).
 
@@ -72,20 +95,11 @@ def _cmd_quality(args) -> int:
     is scored through the Stage B offline gate; output is human-readable by
     default, stable JSON with --json.
     """
-    files: list[Path] = []
-    for group in args.image or []:
-        entries = group if isinstance(group, (list, tuple)) else [group]
-        for item in entries:
-            p = Path(item).expanduser()
-            if p.is_dir():
-                found = sorted(f for f in p.iterdir()
-                               if f.suffix.lower() in IMAGE_SUFFIXES)
-                if not found:
-                    _log(f"no image files in {p} (supported: png/jpg/jpeg/webp/bmp/tif/gif[/heic])")
-                    return 2
-                files.extend(found)
-            else:
-                files.append(p)
+    try:
+        files = _quality_file_list(args.image)
+    except ValueError as e:
+        _log(str(e))
+        return 2
     if not files:
         _log("no input images: use --image <file-or-dir> [more...]")
         return 2
@@ -178,7 +192,7 @@ def _cmd_predict(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="smallai", description=__doc__)
-    parser.add_argument("command", choices=["generate", "train", "evaluate", "benchmark", "predict", "stage-b", "quality"])
+    parser.add_argument("command", choices=["generate", "train", "evaluate", "benchmark", "predict", "stage-b", "quality", "qgate"])
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--seed", type=int, default=None, help="override the config seed")
     parser.add_argument("--epochs", type=int, default=None)
@@ -242,6 +256,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "quality":
         return _cmd_quality(args)
+    if args.command == "qgate":
+        from . import stage_b_q as sbq
+        if args.image:
+            results = sbq.check_images_with_q(_quality_file_list(args.image))
+            print(json.dumps(results, indent=2))
+            return 0
+        print(json.dumps(sbq.run_experiment(), indent=2, default=list))
+        return 0
     return 1
 
 

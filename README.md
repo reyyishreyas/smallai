@@ -425,3 +425,33 @@ exposure ladder, not the corpus; rotation ±7° is out of Stage B scope.
 
 Full write-up in `reports/AI-267_STAGE_B_RESULTS.md`.
 
+## 12. Stage B-Q (experimental branch) — a tiny RL capture gate
+
+On branch `feat/stage-b-q-gate`, `stage_b_q.py` replaces the fixed thresholds
+with a **tabular Q-learning agent** — the lightest RL setup that deserves the
+name, mirroring how Stage A learns (Q-table + solver-guided rewards) but applied
+to the capture decision:
+
+- **State** — 4 signals quantized on hand-chosen bucket edges (≤ 240 states)
+- **Actions** — `RETAKE | REVIEW | PASS` (same contract as Stage B)
+- **Reward** — `1 − cost(action, truth)` with an *asymmetric* cost matrix:
+  forwarding an unreadable capture (PASS-on-RETAKE, cost 2.0) is the worst
+  mistake; a wasted re-capture (RETAKE-on-PASS, cost 1.5) is mild
+- **Learning** — ε-greedy, off-policy Q-learning, one-step terminal episodes
+  (contextual-bandit formulation); deterministic seeds, pure NumPy
+- **Deployment** — greedy policy; **fail-closed** (unseen states → RETAKE)
+
+Trained on the full-corpus soft blur labels it converges to a **6-state,
+18-parameter policy with the same expected reward as the supervised v3 gate**
+(0.789 vs 0.788 mean reward on all 2000 labeled images) — learned purely from
+reward feedback, no thresholds hand-placed. During rollout it discovers REVIEW
+hedges for ambiguous states on its own.
+
+```bash
+python -m smallai qgate                          # train + compare vs fixed gate (JSON)
+python -m smallai qgate --image photo.jpg        # verdicts from the learned policy
+```
+
+Run the tests (`make test`) to see determinism, sweep-truth recovery, and the
+fail-closed path verified.
+
