@@ -111,10 +111,10 @@ def test_resolve_state_generalizes_or_fails_closed():
         else:
             continue
         break
-    # find a truly novel state (>= 2 buckets away from everything trained)
+    # find a truly novel state (>= 2 L1 bucket units from everything trained)
     far = None
     for cand in [(4, 2, 3, 2), (0, 0, 0, 0), (2, 2, 2, 2)]:
-        d_best = min(sum((a != b) for a, b in zip(cand, t)) for t in agent.q)
+        d_best = min(sum(abs(a - b) for a, b in zip(cand, t)) for t in agent.q)
         if d_best >= 2:
             far = cand
             break

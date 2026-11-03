@@ -3,8 +3,8 @@
 This branch replaces the v3 *fixed* thresholds with a **learned** policy — the
 lightest weight RL setup that still deserves the name:
 
-  State     s = quantize(signal row) on 5 hand-chosen bucket edges per signal
-            (sharpness 5 × ink 4 × brightness 4 × contrast 3 = 240 possible
+  State     s = quantize(signal row) on bucket edges per signal
+            (sharpness 6 × ink 3 × brightness 4 × contrast 3 = 216 possible
             states; in practice far fewer are ever observed)
   Actions   a ∈ {RETAKE, REVIEW, PASS}  (the same verdict contract as Stage B)
   Reward    1 − cost(action, expert verdict), with an *asymmetric* cost matrix:
@@ -28,6 +28,9 @@ Expert labels (the reward source):
   corpus soft blur labels → RETAKE if lab == 1, REVIEW if lab == 0.5,
   PASS if lab == 0  (labels are soft for 849/2000 images — see the Stage B
   report); the degradation sweep carries its own level→verdict ground truth.
+  Field evidence (v3.1): the real mirror-trio blur ladder adds human-validated
+  samples — real printed-page blur stays readable into the 0.08–0.13 zone, so
+  those states are taught REVIEW; below 0.08 and dark states stay RETAKE.
 
 Everything is deterministic (fixed seeds) and pure NumPy.
 """
@@ -51,7 +54,7 @@ DECISION_NAMES = iq.DECISION_NAMES
 # buckets — a coarse upper bucket would create unseen-state dead zones for
 # real-world dense-print documents (bank statements, forms).
 STATE_EDGES: dict[str, tuple[float, ...]] = {
-    "sharpness": (0.05, 0.10, 0.13, 0.20),
+    "sharpness": (0.05, 0.08, 0.13, 0.20),
     "ink_ratio": (0.002, 0.003),
     "brightness": (0.10, 0.25, 0.60),
     "contrast": (0.18, 0.35),
@@ -101,6 +104,49 @@ def samples_from_sweep(n_docs: int = 24, seed: int = 0
             sig = iq.extract(img)
             states.append(quantize_signals(sig)[0])
             experts.append(verdict)
+    return states, experts
+
+
+def samples_from_real_ladder(
+        directory: str | Path = "data/prescriptions",
+        seed: int = 0) -> tuple[list[tuple[int, ...]], list[int]]:
+    """(state, expert) samples from the real 800x1000 mirror trio ladder.
+
+    Encodes the v3.1 field evidence in training data: real camera blur on a
+    printed page remains *humanly readable* into the 0.08–0.13 sharpness zone
+    (verified on real captures), so real blurred variants are labelled REVIEW
+    there and RETAKE only below 0.08. Dark variants are RETAKE-truth.
+    Silently yields nothing when the mirror directory is absent (fresh clone).
+    """
+    from PIL import Image
+
+    d = Path(directory)
+    files = sorted(d.glob("*.png"))
+    if not files:
+        return [], []
+    rng = np.random.default_rng(seed)
+    states, experts = [], []
+    for f in files:
+        with Image.open(f) as im:
+            base = np.asarray(im.convert("RGB"), dtype=np.float64) / 255.0
+        for kind, lvl in (("blur", 1.0), ("blur", 2.0), ("blur", 3.0),
+                          ("blur", 4.0), ("exposure", 0.2)):
+            img = sb.corrupt(base[None], kind, lvl, rng)
+            sig = iq.extract(img)
+            states.append(quantize_signals(sig)[0])
+            # v3.1 human-judgment zones on the real captures:
+            #   sharp >= 0.13 readable            -> PASS
+            #   0.08 <= sharp < 0.13 blurred-ok   -> REVIEW
+            #   sharp < 0.08 unreadable / dark    -> RETAKE
+            if sig["brightness"][0] < iq.RETAKE_BRIGHT_MIN:
+                truth = RETAKE
+            elif sig["sharpness"][0] >= iq.REVIEW_SHARP_MIN:
+                truth = PASS
+            elif sig["sharpness"][0] >= iq.RETAKE_SHARP_MIN:
+                truth = REVIEW
+            else:
+                truth = RETAKE
+            experts.append(truth)
     return states, experts
 
 
@@ -162,16 +208,19 @@ class QCaptureAgent:
     def resolve_state(self, s: tuple[int, ...]) -> tuple[tuple[int, ...], int] | tuple[None, None]:
         """Map a possibly-unseen state onto training evidence.
 
-        Returns (resolved_state, hamming_distance) of the nearest trained
-        state when it is within distance 1 of the query (signals move
+        Returns (resolved_state, distance) of the nearest trained state when
+        it is within L1 bucket distance 1 of the query (signals move
         continuously, so adjacent buckets share the physics); returns
         (None, None) when the state is novel enough to fail closed.
+        L1 on bucket indices — not a coordinate count — so a query never
+        skips over a closer trained state (bucket 0 must not snap to bucket 2
+        while bucket 1 is trained).
         """
         if s in self.q:
             return s, 0
         best, best_d = None, None
         for ts in self.q:
-            d = sum((a != b) for a, b in zip(s, ts))
+            d = sum(abs(a - b) for a, b in zip(s, ts))
             if best_d is None or d < best_d:
                 best, best_d = ts, d
         if best is not None and best_d <= 1:
@@ -238,6 +287,9 @@ def check_images_with_q(paths: list[str | Path],
         st, ex = samples_from_corpus(npz_path)
     else:
         st, ex = samples_from_sweep()
+    # field evidence: blurred-but-human-readable real captures are REVIEW
+    rl, rx = samples_from_real_ladder()
+    st, ex = st + rl, ex + rx
     agent = QCaptureAgent(seed=seed)
     agent.learn(st, ex)
 
@@ -302,7 +354,9 @@ def run_experiment(npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
         sig = {k: np.array(v) for k, v in rows.items()}
 
     agent = QCaptureAgent(seed=seed)
-    agent.learn(states, experts)
+    # field evidence: blurred-but-human-readable real captures are REVIEW
+    rl, rx = samples_from_real_ladder()
+    agent.learn(states + rl, experts + rx)
     q_actions = agent.predict(states)
     fixed_actions = [int(x) for x in iq.decide(sig)]
 

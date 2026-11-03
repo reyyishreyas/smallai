@@ -37,8 +37,19 @@ dependent (sharpness scales with capture size). v3:
 5. retunes all thresholds **supervised on the full 2000-image Kaggle corpus**
    (`dataset/images` + its per-image blur labels): normalized sharpness
    separates blur-labelled (max 0.092) from sharp-labelled (min 0.208) with no
-   overlap; the chosen cuts (RETAKE < 0.10, REVIEW < 0.13) yield zero false
-   RETAKEs on the 952 sharp-labelled images and RETAKE for every blurred one.
+   overlap. Cuts: RETAKE < 0.08, REVIEW < 0.13 — zero false RETAKEs on the 952
+   sharp-labelled images and *no blurred capture ever passes* (everything
+   blurred-labelled lands in RETAKE or REVIEW).
+
+v3.1 — the readable-blur band (field evidence)
+----------------------------------------------
+Real field captures vindicated widening the REVIEW band downward: a blurry-but
+-human-readable printed-form photo measured sharpness 0.088 — inside the
+blur corpus's own class range, yet plainly legible. Camera photos of printed
+pages degrade differently from the synthetic blur kernel, so the hard-RETAKE
+cut was lowered 0.10 → 0.08: below it text is genuinely gone; the 0.08–0.13
+zone is REVIEW (flag, let a human judge). The supervised guarantees hold
+unchanged: zero sharp-labelled false rejects, zero blurred-labelled passes.
 
 Signals (all measured on the fixed analysis grid):
 
@@ -83,18 +94,21 @@ MIN_INK_FOR_CONTRAST = 16  # min ink pixels before contrast uses the ink region
 CONTRAST_PCTS = (0.5, 99.5)  # whole-frame fallback when no ink is detectable
 
 # ---------------------------------------------------------------------------
-# Gate thresholds v3 — supervised on the full 2000-image Kaggle corpus
-# (metadata blur labels) + the readable 800x1000 mirror trio:
+# Gate thresholds v3.1 — supervised on the full 2000-image Kaggle corpus
+# (metadata blur labels), real mirror trio, and field evidence:
 #   normalized sharpness separates the classes cleanly:
-#     blur-labelled: 0.02-0.09   | ambiguous band: 0.10-0.13 | readable: > 0.13
-#     (blur=0 corpus floor 0.208; blur=1 corpus ceiling 0.092; 0 false retakes
-#      on all 952 sharp-labelled images at cut 0.10)
+#     blur-labelled: 0.02-0.092 | readable-blur band: 0.08-0.13 | readable: > 0.13
+#     (blur=0 corpus floor 0.208; 0 false retakes on all 952 sharp-labelled
+#      images at cut 0.08; nothing blurred-labelled ever reaches PASS)
+#   v3.1: hard-RETAKE lowered 0.10 -> 0.08 after a real human-readable
+#   printed-form photo measured 0.088 — camera blur ≠ the synthetic blur
+#   kernel, so 0.08-0.10 is REVIEW ("flag, human judges"), not RETAKE.
 #   ink_ratio catches blank/dark-crushed/wall captures (no-content),
 #   contrast separates washed-out-but-readable faint print into REVIEW.
 # ---------------------------------------------------------------------------
 RETAKE_BRIGHT_MIN = 0.10    # mean luma below this -> too dark to read
 RETAKE_INK_MIN = 0.002      # less ink than this -> blank page / wall / crushed
-RETAKE_SHARP_MIN = 0.10     # text-edge strength below this -> unreadably blurry
+RETAKE_SHARP_MIN = 0.08     # text-edge strength below this -> unreadably blurry
 REVIEW_BRIGHT_MIN = 0.25    # dim but possibly readable
 REVIEW_CONTRAST_MIN = 0.18  # washed-out print / crushed capture
 REVIEW_INK_MIN = 0.003      # near-blank content
