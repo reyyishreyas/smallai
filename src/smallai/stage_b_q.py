@@ -46,9 +46,13 @@ DECISION_NAMES = iq.DECISION_NAMES
 # Bucket edges per signal (same information the v3 gate thresholds used, but
 # finer — the agent is free to discover where the real cut lines are).
 # A value in [edge[i-1], edge[i]) lands in bucket i; below edge[0] -> 0.
+# NOTE on ink_ratio: the v3 gate has NO upper-ink cut (dense print is normal
+# for many documents), so ink gets only the "no content / sparse / has ink"
+# buckets — a coarse upper bucket would create unseen-state dead zones for
+# real-world dense-print documents (bank statements, forms).
 STATE_EDGES: dict[str, tuple[float, ...]] = {
     "sharpness": (0.05, 0.10, 0.13, 0.20),
-    "ink_ratio": (0.002, 0.003, 0.02),
+    "ink_ratio": (0.002, 0.003),
     "brightness": (0.10, 0.25, 0.60),
     "contrast": (0.18, 0.35),
 }
@@ -155,9 +159,40 @@ class QCaptureAgent:
         return self.stats()
 
     # -- deployment ----------------------------------------------------------------
+    def resolve_state(self, s: tuple[int, ...]) -> tuple[tuple[int, ...], int] | tuple[None, None]:
+        """Map a possibly-unseen state onto training evidence.
+
+        Returns (resolved_state, hamming_distance) of the nearest trained
+        state when it is within distance 1 of the query (signals move
+        continuously, so adjacent buckets share the physics); returns
+        (None, None) when the state is novel enough to fail closed.
+        """
+        if s in self.q:
+            return s, 0
+        best, best_d = None, None
+        for ts in self.q:
+            d = sum((a != b) for a, b in zip(s, ts))
+            if best_d is None or d < best_d:
+                best, best_d = ts, d
+        if best is not None and best_d <= 1:
+            return best, best_d
+        return None, None
+
     def predict(self, states: list[tuple[int, ...]]) -> list[int]:
-        """Greedy (deployment) decisions — no exploration."""
-        return [self.act(s, greedy=True) for s in states]
+        """Greedy (deployment) decisions — no exploration.
+
+        Unseen states generalize to the nearest trained bucket when adjacent;
+        otherwise they fail closed (RETAKE — never PASS without evidence).
+        Inference never mutates the table.
+        """
+        out = []
+        for s in states:
+            resolved, _ = self.resolve_state(s)
+            if resolved is None:
+                out.append(RETAKE)
+            else:
+                out.append(int(np.argmax(self.q[resolved])))
+        return out
 
     def stats(self) -> dict:
         return {
@@ -211,13 +246,20 @@ def check_images_with_q(paths: list[str | Path],
             continue
         s = {k: np.array([r["signals"][k]]) for k in _STATE_KEYS}
         state = quantize_signals(s)[0]
-        qv = agent.q.get(state)
-        if qv is None:
+        resolved, dist = agent.resolve_state(state)
+        if resolved is None:
             # fail-closed: a state never observed during training is rejected —
             # never PASS what the policy has no value estimates for
             qv = np.zeros(len(DECISION_NAMES))
             r.setdefault("reasons", []).append(
                 "unseen state — fail-closed default (no training evidence)")
+            r["state_used"] = None
+        else:
+            qv = agent.q[resolved]
+            r["state_used"] = list(resolved)
+            if dist > 0:
+                r.setdefault("reasons", []).append(
+                    f"state generalized {dist} bucket(s) away from a trained state")
         r["state"] = list(state)
         r["verdict_q"] = DECISION_NAMES[int(np.argmax(qv))]
         r["q_values"] = [round(float(x), 3) for x in qv]

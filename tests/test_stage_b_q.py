@@ -8,15 +8,18 @@ from smallai.env import image_quality as iq
 def test_quantize_signals_bins():
     sig = {
         "sharpness": np.array([0.02, 0.07, 0.11, 0.16, 0.30]),
-        "ink_ratio": np.array([0.0, 0.005, 0.25, 0.005, 0.25]),
+        "ink_ratio": np.array([0.0, 0.0025, 0.25, 0.005, 0.25]),
         "brightness": np.array([0.05, 0.8, 1.0, 0.8, 1.0]),
         "contrast": np.array([0.05, 0.25, 0.9, 0.25, 0.9]),
     }
     states = sbq.quantize_signals(sig)
     assert states[0] == (0, 0, 0, 0)          # all bottom buckets
+    assert states[1] == (1, 1, 3, 1)          # just above the edge cutoffs
     assert states[3] == (3, 2, 3, 1)          # mid buckets
-    assert states[4] == (4, 3, 3, 2)          # top sharpness / ink buckets
+    assert states[4] == (4, 2, 3, 2)          # top sharpness bucket
+    # dense print (ink 0.25) is NOT an outlier bucket — no upper ink cut
     assert len(set(states)) == 5
+    assert sbq.STATE_EDGES["ink_ratio"] == (0.002, 0.003)
 
 
 def test_reward_matrix_is_asymmetric():
@@ -85,5 +88,35 @@ def test_check_images_with_q(tmp_path):
     assert r["verdict_q"] == "PASS"
     assert r["verdict_fixed"] == "PASS"   # policies agree on an obvious doc
     assert len(r["state"]) == 4
-    assert sorted(r["q_values"]) == sorted(r["q_values"])  # 3 floats carry Q per action
     assert max(r["q_values"]) > min(r["q_values"])  # the agent actually learned
+
+
+def test_resolve_state_generalizes_or_fails_closed():
+    states, experts = sbq.samples_from_sweep(n_docs=8, seed=0)
+    agent = sbq.QCaptureAgent(seed=0)
+    agent.learn(states, experts, epochs=40)
+    trained = list(agent.q)
+    s = trained[0]
+    # perturb exactly one bucket -> still resolvable
+    for i in range(4):
+        for delta in (-1, 1):
+            nov = list(s)
+            nov[i] = max(nov[i] + delta, 0)
+            nov = tuple(nov)
+            if nov == s or nov in agent.q:
+                continue
+            resolved, d = agent.resolve_state(nov)
+            assert resolved == s and d == 1  # snaps to the trained neighbour
+            break
+        else:
+            continue
+        break
+    # find a truly novel state (>= 2 buckets away from everything trained)
+    far = None
+    for cand in [(4, 2, 3, 2), (0, 0, 0, 0), (2, 2, 2, 2)]:
+        d_best = min(sum((a != b) for a, b in zip(cand, t)) for t in agent.q)
+        if d_best >= 2:
+            far = cand
+            break
+    if far is not None:
+        assert agent.resolve_state(far) == (None, None)

@@ -432,14 +432,16 @@ with a **tabular Q-learning agent** — the lightest RL setup that deserves the
 name, mirroring how Stage A learns (Q-table + solver-guided rewards) but applied
 to the capture decision:
 
-- **State** — 4 signals quantized on hand-chosen bucket edges (≤ 240 states)
+- **State** — 4 signals quantized on hand-chosen bucket edges (≤ 180 states)
 - **Actions** — `RETAKE | REVIEW | PASS` (same contract as Stage B)
 - **Reward** — `1 − cost(action, truth)` with an *asymmetric* cost matrix:
   forwarding an unreadable capture (PASS-on-RETAKE, cost 2.0) is the worst
   mistake; a wasted re-capture (RETAKE-on-PASS, cost 1.5) is mild
 - **Learning** — ε-greedy, off-policy Q-learning, one-step terminal episodes
   (contextual-bandit formulation); deterministic seeds, pure NumPy
-- **Deployment** — greedy policy; **fail-closed** (unseen states → RETAKE)
+- **Deployment** — greedy policy; unseen states generalize to the nearest
+  trained bucket when adjacent to it, otherwise **fail-closed**
+  (unseen-and-alien → RETAKE).
 
 Trained on the full-corpus soft blur labels it converges to a **6-state,
 18-parameter policy with the same expected reward as the supervised v3 gate**
