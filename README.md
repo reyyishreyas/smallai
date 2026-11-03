@@ -332,10 +332,11 @@ The signals are **document-aware and resolution-invariant**:
 `decide(signals)` maps the signals to a discrete verdict:
 
 - **RETAKE** — unusable: too dark (`brightness < 0.10`), no detectable content
-  (`ink_ratio < 0.002`, blank page), or text edges too smeared to read
-  (`sharpness < 0.10`).
+  (`ink_ratio < 0.002`, blank page), or text edges genuinely destroyed
+  (`sharpness < 0.08`).
 - **REVIEW** — usable but borderline (`brightness < 0.25`, `contrast < 0.18`,
-  `ink_ratio < 0.003`, or `sharpness < 0.13`).
+  `ink_ratio < 0.003`, or `sharpness < 0.13`; the 0.08–0.13 zone is the
+  *readable-blur band*, see below).
 - **PASS** — usable → continue.
 
 There is deliberately **no high-brightness gate**: white paper is the normal
@@ -345,15 +346,27 @@ background of a document capture, and truly blank captures are caught by
 The thresholds are **supervised-calibrated on the full 2000-image Kaggle
 corpus** (`priyanshuyav13/synthetic-medical-prescription-ocr-dataset`,
 `dataset/images`): normalized sharpness separates the metadata blur labels
-with no class overlap (blurred max 0.092 vs sharp-label floor 0.208), the cuts
-(RETAKE < 0.10, REVIEW < 0.13) sit inside that gap — **zero false RETAKEs on
-all 952 sharp-labelled images, 100% recall on all 199 blurred-labelled ones**.
+with no class overlap (blurred max 0.092 vs sharp-label floor 0.208). With
+the v3.1 cuts (RETAKE < 0.08, REVIEW < 0.13), the load-bearing guarantees are:
+**zero false rejects on all 952 sharp-labelled images, and zero blurred
+captures ever reach PASS** — every blurred-labelled capture is stopped (RETAKE
+or REVIEW), so nothing unreadable is ever silently forwarded to OCR.
+
+### v3.1 — the readable-blur band (field evidence)
+
+Field validation found the v3.0 hard-RETAKE cut (0.10) too aggressive for
+**real camera captures**: a blurry-but-clearly-human-readable printed form
+measured sharpness 0.088 — within the blur corpus's own class range. Camera
+blur degrades pages differently from the synthetic blur kernel, so 0.08–0.10
+is now REVIEW ("flag, human judges") and only < 0.08 is hard-RETAKE. All
+supervised guarantees hold; anchor caveat: the 0.08 boundary is human-anchored
+(one field capture) and sits safely above the blur corpus floor (0.072).
 
 The policy lives in the offline path only; OCR and content verification
 (expired ID, expected document type, …) stay a separate concern, per the PoC
 scope agreed with the SmallAI/Mifos team. The discrete verdict contract
 (`RETAKE | REVIEW | PASS`) is what gets ported to the Android / Kotlin runtime.
-~21 ms/image extract, streaming memory-flat corpus runner.
+~14 ms/image extract + decision, streaming memory-flat corpus runner.
 
 ### Stage B measured results (degradation sweep)
 
@@ -389,11 +402,11 @@ python -m smallai quality --image shot.jpg --json         # machine-readable
 ```
 shot.jpg  4032×3024px
   VERDICT: RETAKE
-    sharpness  0.084
-    contrast   0.471
-    ink_ratio  0.0059
-    brightness 0.951
-    ⚠ unreadably blurry (sharpness 0.084 < 0.10)
+    sharpness  0.031
+    contrast   0.975
+    ink_ratio  0.2189
+    brightness 0.812
+    ⚠ unreadably blurry (sharpness 0.031 < 0.08)
 ```
 
 Sizing/resolution doesn't matter (everything is measured on the fixed analysis
@@ -410,18 +423,21 @@ python -c "from smallai import stage_b as sb; print(sb.run_real_corpus('dataset/
 # n_images=2000, ~40 s, flat memory
 ```
 
-Result (n=2000): RETAKE **30.65%**, REVIEW 0%, PASS **69.35%** — zero of the
-952 sharp-labelled images are flagged; every blurred-labelled image is
-retaken. The first 3 mirror images (`data/prescriptions/`, 800×1000, visually
-verified readable) all **PASS** (mean sharpness 0.171, mean brightness 0.950);
-controlled degradations behave correctly on them: blur r=2 → **REVIEW** (the
-real-world borderline band), blur r≥4 → **RETAKE**, ×0.3/×0.1 dark →
-**RETAKE**.
+Result (n=2000, v3.1 gates): RETAKE **10.3%**, REVIEW **20.4%**, PASS
+**69.35%** — none of the 952 sharp-labelled images are rejected (they all
+PASS); every blurred-labelled capture is stopped (68 hard-retaken, 131
+flagged for human REVIEW, **zero PASS**). The first 3 mirror images
+(`data/prescriptions/`, 800×1000, visually verified readable) all **PASS**
+(mean sharpness 0.171, mean brightness 0.950); controlled degradations of
+them behave correctly: blur r=2/4/6 → **REVIEW** (mild or readable blur),
+blur r≥8 → **RETAKE** (text edges gone), ×0.3/×0.1 dark → **RETAKE**.
 
 Honest caveats (full details in the report): blur labels are soft for 849/2000
 images with inconsistent flagging between metadata rows; the corpus brightness
 range is 0.85–1.15 so the extreme-dark thresholds come from the controlled
-exposure ladder, not the corpus; rotation ±7° is out of Stage B scope.
+exposure ladder, not the corpus; the 0.08 readable-blur boundary is
+human-anchored (one field capture) — REVIEW is exactly where such judgment
+calls should live; rotation ±7° is out of Stage B scope.
 
 Full write-up in `reports/AI-267_STAGE_B_RESULTS.md`.
 
@@ -432,22 +448,34 @@ with a **tabular Q-learning agent** — the lightest RL setup that deserves the
 name, mirroring how Stage A learns (Q-table + solver-guided rewards) but applied
 to the capture decision:
 
-- **State** — 4 signals quantized on hand-chosen bucket edges (≤ 180 states)
+- **State** — 4 signals quantized on hand-chosen bucket edges (≤ 216 states);
+  sharpness buckets include the v3.1 boundary (0.05 / 0.08 / 0.13 / 0.20)
 - **Actions** — `RETAKE | REVIEW | PASS` (same contract as Stage B)
 - **Reward** — `1 − cost(action, truth)` with an *asymmetric* cost matrix:
   forwarding an unreadable capture (PASS-on-RETAKE, cost 2.0) is the worst
   mistake; a wasted re-capture (RETAKE-on-PASS, cost 1.5) is mild
 - **Learning** — ε-greedy, off-policy Q-learning, one-step terminal episodes
   (contextual-bandit formulation); deterministic seeds, pure NumPy
+- **Training data** — full-corpus soft blur labels plus real-ladder field
+  evidence (`samples_from_real_ladder`): blurred variants of the real mirror
+  trio encode the human-judgment zones (sharp ≥ 0.13 → PASS, 0.08–0.13 →
+  REVIEW, < 0.08 / dark → RETAKE)
 - **Deployment** — greedy policy; unseen states generalize to the nearest
-  trained bucket when adjacent to it, otherwise **fail-closed**
-  (unseen-and-alien → RETAKE).
+  trained state when it is within **L1 bucket distance ≤ 1** (signals move
+  continuously, so adjacent buckets share the physics), otherwise
+  **fail-closed** (truly novel → RETAKE). Inference never mutates the table.
 
-Trained on the full-corpus soft blur labels it converges to a **6-state,
-18-parameter policy with the same expected reward as the supervised v3 gate**
-(0.789 vs 0.788 mean reward on all 2000 labeled images) — learned purely from
-reward feedback, no thresholds hand-placed. During rollout it discovers REVIEW
-hedges for ambiguous states on its own.
+Trained on the full-corpus soft blur labels + real-ladder evidence it
+converges to a **9-state, 27-parameter policy (216 bytes) with learn-parity**
+against the supervised v3.1 gate: mean reward **0.8081 vs 0.8076** on all 2000
+labeled images (a 0.0005 difference at n = 2000) — learned purely
+from reward feedback, no thresholds hand-placed. Inference is **~14 ms/image**
+end-to-end (signal extraction + decision), full training **~2 s** on CPU.
+During rollout it discovers REVIEW hedges for ambiguous states on its own.
+
+Live-verified on real field captures (v3.1): truly-blurry photos → **RETAKE**
+with learned confidence, the blurry-but-readable form photo → **REVIEW**
+(Q[REVIEW] = 0.98), a dense-print bank statement → **PASS** (Q[PASS] = 0.98).
 
 ```bash
 python -m smallai qgate                          # train + compare vs fixed gate (JSON)
