@@ -1,8 +1,7 @@
 """Stage B (AI-267) — real image-quality signals through the offline gate.
 
-Stage A scored a tabular Q-table over *synthetic* quality signals. Stage B
-measures *real* quality signals from captured document images and applies the
-discrete offline policy (RETAKE / REVIEW / PASS).
+This module measures *real* quality signals from captured document images and
+applies the discrete offline policy (RETAKE / REVIEW / PASS).
 
 This module runs the full Stage B experiment:
 

@@ -1,10 +1,8 @@
 """Stage B (AI-267): real image-quality signals + offline decision policy (v3).
 
-Stage A of the CLEF-inspired decision-policy PoC scored a tabular Q-table over
-*synthetic* image-quality signals. Stage B moves to *real* image-quality signals
-measured directly from the captured document image, and keeps the discrete
-decision (pass / retake / review) as a policy that is separate from OCR /
-content verification (Victor's PoC scope).
+Real image-quality signals are measured directly from the captured document
+image, and the discrete decision (RETAKE / REVIEW / PASS) stays a policy that
+is separate from OCR / content verification (Victor's PoC scope).
 
 Everything here is implemented from scratch with NumPy only — no CV/ML
 libraries and no LLM in the inference path. The policy stays tiny and fully

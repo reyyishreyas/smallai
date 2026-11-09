@@ -2,10 +2,9 @@
 
 **Repository:** reyyishreyas/smallai · **Stage:** B · **Status:** scored (v3.1, supervised calibration on the full 2000-image corpus + field-validated readable-blur band)
 
-Stage A scored a tabular Q-table over *synthetic* image-quality signals. Stage B
-measures **real** image-quality signals directly from captured document images
-(pure NumPy — no CV/ML library, no GPU, no LLM in the inference path) and applies
-the discrete offline policy `RETAKE | REVIEW | PASS`.
+This stage measures **real** image-quality signals directly from captured
+document images (pure NumPy — no CV/ML library, no GPU, no LLM in the inference
+path) and applies the discrete offline policy `RETAKE | REVIEW | PASS`.
 
 ## v2 → v3 → v3.1 review history
 

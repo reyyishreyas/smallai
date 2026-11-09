@@ -1,2 +1,2 @@
-"""SmallAI decision model: a from-scratch (NumPy), interpretable multi-step
-decision model trained with journey learning. See the project README."""
+"""SmallAI capture-quality gate: real image-quality signals measured from a
+captured document image -> RETAKE | REVIEW | PASS. See the project README."""
