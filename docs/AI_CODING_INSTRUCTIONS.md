@@ -29,6 +29,7 @@ The repo's own docs for scope and design: `docs/ARCHITECTURE.md`, `docs/EXPERIME
 - `src/smallai/` (root of package) — Stage A journey-learning components (env / agent / solver)
 - `tests/` — Stage A, Stage B gate, Stage B-Q, env tests
 - `configs/`, `data/`, `runs/`, `reports/`, `docs/`, `dataset/` (gitignored corpus)
+- `docs/AI_267_FULL_CONTEXT.md` — full AI handoff/context for AI-267 (current state, invariants, next steps)
 
 ## 4. How a behavior change should be made
 
