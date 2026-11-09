@@ -216,6 +216,9 @@ def main(argv: list[str] | None = None) -> int:
                              "(e.g. data/prescriptions)")
     parser.add_argument("--n", type=int, default=None,
                         help="max real images to evaluate in the stage-b gate")
+    parser.add_argument("--real-images", type=str, default="data/prescriptions",
+                        help="directory of real document images behind the qgate "
+                             "real-ladder supervision (default: data/prescriptions)")
     args = parser.parse_args(argv)
 
     cfg, root = cfg_mod.load_config(args.config)
@@ -259,10 +262,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "qgate":
         from . import stage_b_q as sbq
         if args.image:
-            results = sbq.check_images_with_q(_quality_file_list(args.image))
+            results = sbq.check_images_with_q(_quality_file_list(args.image), real_ladder_dir=args.real_images)
             print(json.dumps(results, indent=2))
             return 0
-        print(json.dumps(sbq.run_experiment(), indent=2, default=list))
+        print(json.dumps(sbq.run_experiment(real_ladder_dir=args.real_images), indent=2, default=list))
         return 0
     return 1
 

@@ -105,6 +105,8 @@ CONTRAST_PCTS = (0.5, 99.5)  # whole-frame fallback when no ink is detectable
 #   kernel, so 0.08-0.10 is REVIEW ("flag, human judges"), not RETAKE.
 #   ink_ratio catches blank/dark-crushed/wall captures (no-content),
 #   contrast separates washed-out-but-readable faint print into REVIEW.
+#   The Q-gate's real-ladder supervision source is configurable
+#   (`smallai qgate --real-images <dir>`; default data/prescriptions).
 # ---------------------------------------------------------------------------
 RETAKE_BRIGHT_MIN = 0.10    # mean luma below this -> too dark to read
 RETAKE_INK_MIN = 0.002      # less ink than this -> blank page / wall / crushed

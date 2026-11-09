@@ -270,6 +270,7 @@ def evaluate(actions: list[int], experts: list[int]) -> dict:
 
 def check_images_with_q(paths: list[str | Path],
                         npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
+                        real_ladder_dir: str | Path = "data/prescriptions",
                         seed: int = 0) -> list[dict]:
     """Score arbitrary image files with the *learned* Q-policy (demo path).
 
@@ -281,6 +282,7 @@ def check_images_with_q(paths: list[str | Path],
       verdict_q   the policy's decision
       q_values    learned Q-values per action [RETAKE, REVIEW, PASS]
       verdict_fixed  the fixed v3 gate's verdict for side-by-side comparison
+      real_ladder_dir  directory of real doc images behind the ladder labels
     """
     results = sb.check_images(paths)
     if Path(npz_path).exists():
@@ -288,7 +290,7 @@ def check_images_with_q(paths: list[str | Path],
     else:
         st, ex = samples_from_sweep()
     # field evidence: blurred-but-human-readable real captures are REVIEW
-    rl, rx = samples_from_real_ladder()
+    rl, rx = samples_from_real_ladder(real_ladder_dir)
     st, ex = st + rl, ex + rx
     agent = QCaptureAgent(seed=seed)
     agent.learn(st, ex)
@@ -321,6 +323,7 @@ def check_images_with_q(paths: list[str | Path],
 
 
 def run_experiment(npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
+                   real_ladder_dir: str | Path = "data/prescriptions",
                    seed: int = 0) -> dict:
     """Train the Q gate and compare it with the fixed v3 thresholds.
 
@@ -328,6 +331,12 @@ def run_experiment(npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
     samples, soft-label experts); otherwise falls back to the deterministic
     degradation sweep. Returns both policies scored against the SAME labels,
     so the comparison is apples-to-apples.
+
+    `real_ladder_dir` is the directory of real document captures behind the
+    human-judgment ladder labels (default `data/prescriptions`, the 800x1000
+    mirror trio); pass a bigger corpus directory (e.g. `dataset/images` with
+    the full medical-prescription OCR set) to train the Q gate on a larger
+    real dataset.
     """
     p = Path(npz_path)
     if p.exists():
@@ -355,7 +364,7 @@ def run_experiment(npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
 
     agent = QCaptureAgent(seed=seed)
     # field evidence: blurred-but-human-readable real captures are REVIEW
-    rl, rx = samples_from_real_ladder()
+    rl, rx = samples_from_real_ladder(real_ladder_dir)
     agent.learn(states + rl, experts + rx)
     q_actions = agent.predict(states)
     fixed_actions = [int(x) for x in iq.decide(sig)]

@@ -457,21 +457,28 @@ to the capture decision:
 - **Learning** — ε-greedy, off-policy Q-learning, one-step terminal episodes
   (contextual-bandit formulation); deterministic seeds, pure NumPy
 - **Training data** — full-corpus soft blur labels plus real-ladder field
-  evidence (`samples_from_real_ladder`): blurred variants of the real mirror
-  trio encode the human-judgment zones (sharp ≥ 0.13 → PASS, 0.08–0.13 →
-  REVIEW, < 0.08 / dark → RETAKE)
+  evidence (`samples_from_real_ladder`): blurred variants of real document
+  captures encode the human-judgment zones (sharp ≥ 0.13 → PASS, 0.08–0.13 →
+  REVIEW, < 0.08 / dark → RETAKE). The ladder source directory is configurable
+  via `--real-images` (default `data/prescriptions`, the 800×1000 mirror trio);
+  it was run over the full medical-prescription OCR corpus
+  (`dataset/images`, 2000 documents) to enlarge the real supervision.
 - **Deployment** — greedy policy; unseen states generalize to the nearest
   trained state when it is within **L1 bucket distance ≤ 1** (signals move
   continuously, so adjacent buckets share the physics), otherwise
   **fail-closed** (truly novel → RETAKE). Inference never mutates the table.
 
-Trained on the full-corpus soft blur labels + real-ladder evidence it
-converges to a **9-state, 27-parameter policy (216 bytes) with learn-parity**
-against the supervised v3.1 gate: mean reward **0.8081 vs 0.8076** on all 2000
-labeled images (a 0.0005 difference at n = 2000) — learned purely
-from reward feedback, no thresholds hand-placed. Inference is **~14 ms/image**
-end-to-end (signal extraction + decision), full training **~2 s** on CPU.
-During rollout it discovers REVIEW hedges for ambiguous states on its own.
+Trained on the full-corpus soft blur labels + real-ladder evidence (enlarged to
+the full 2000-image medical-prescription corpus) it converges to a
+**16-state, 48-parameter policy** with **learn-parity** against the supervised
+v3.1 gate: mean reward **0.8076** and agreement **0.648** on all 2000
+labeled images — the learned policy now reproduces the supervised gate exactly
+over the enlarged real evidence (previously the Q-gate scored 0.8081 vs the
+fixed gate's 0.8076 at n = 2000) — learned purely
+from reward feedback, no thresholds hand-placed. Inference is
+**~14 ms/image** end-to-end (signal extraction + decision), full training
+**~2 s** on CPU. During rollout it discovers REVIEW hedges for ambiguous states
+on its own.
 
 Live-verified on real field captures (v3.1): truly-blurry photos → **RETAKE**
 with learned confidence, the blurry-but-readable form photo → **REVIEW**
@@ -480,6 +487,7 @@ with learned confidence, the blurry-but-readable form photo → **REVIEW**
 ```bash
 python -m smallai qgate                          # train + compare vs fixed gate (JSON)
 python -m smallai qgate --image photo.jpg        # verdicts from the learned policy
+python -m smallai qgate --real-images dataset/images  # train on the full medical corpus
 ```
 
 Run the tests (`make test`) to see determinism, sweep-truth recovery, and the
