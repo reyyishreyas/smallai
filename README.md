@@ -1,297 +1,314 @@
-# SmallAI — Document Capture-Quality Gate
+# SmallAI
 
 [![CI](https://github.com/reyyishreyas/smallai/actions/workflows/ci.yml/badge.svg)](https://github.com/reyyishreyas/smallai/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Dependencies: numpy + pillow](https://img.shields.io/badge/deps-numpy%20%2B%20pillow-informational)](pyproject.toml)
 
-**Pre-registered PoC for Mifos AI-267** — lightweight decision policies with
-cost-aware re-verification.
+**A non-LLM, pure-NumPy capture-quality gate for document photos.**
 
-A **non-LLM, pure-NumPy offline capture gate**: it measures real image-quality
-signals directly from a captured document image and decides whether the capture
-should be `RETAKE | REVIEW | PASS` — catching unusable captures *before* they
-reach OCR, in ~14 ms/image on CPU, with no model download, no GPU and no API
-call.
+SmallAI measures real image-quality signals directly from a captured document
+and decides whether the capture is usable — `RETAKE | REVIEW | PASS` — **before**
+it reaches OCR. It needs no model download, no GPU, no API call and no network.
 
-- **No LLM / no neural net in the inference path** — NumPy + Pillow (IO only).
-- **Deterministic** — fixed seeds, pure NumPy math, reproducible verdicts.
-- **Supervised-calibrated** on a full 2000-image corpus with load-bearing
-  guarantees (see [Measured results](#3-measured-results)).
-- **Offline / CPU-only** — ~14 ms/image end-to-end (signal extraction +
-  decision), streaming memory-flat corpus runner.
+- **No LLM, no neural network, no ML framework** — NumPy for the math, Pillow for
+  image IO only.
+- **Deterministic** — fixed seeds, pure NumPy, identical verdicts on re-run.
+- **Offline and tiny** — ~14 ms per capture on CPU, streaming, flat memory.
+- **Auditable** — every verdict reports the signals and the exact threshold that
+  fired, not a prose opinion.
+- **Portable contract** — a discrete three-way verdict, designed to be
+  reimplemented in Kotlin/Go/Java/Rust and conformance-tested.
+
+```text
+RETAKE   unusable — ask for a new capture
+REVIEW   usable but borderline — flag for a human
+PASS     usable — continue to OCR
+```
 
 ---
 
-## 1. Problem and motivation
+## 1. Why
 
-A field officer photographs an ID, form or prescription with a phone — often
+Field officers photograph IDs, forms and prescriptions with a phone — often
 offline, often in bad light. Unusable captures (blurry, too dark, blank) must be
-stopped *at the camera*, with a human-readable reason, instead of failing
-downstream OCR or wasting a reviewer's time later.
+stopped **at the camera**, with a readable reason, instead of failing downstream
+OCR or wasting a reviewer's time.
 
-Calling an LLM to judge capture quality costs roughly $0.11 per 1k decisions
-(~500-token prompt) and ~1 s latency. This gate costs **$0 per decision** and
-**~14 ms**, and returns the exact signals and thresholds that produced its
-verdict — an auditable trail a single LLM answer cannot offer.
+| | LLM judge | SmallAI gate |
+| --- | --- | --- |
+| Cost per 1k decisions | ~$0.11 | **$0** |
+| Latency per decision | ~1 s | **~14 ms** |
+| Network required | Yes | **No** |
+| Output | prose verdict | signals + thresholds that fired |
+| Deterministic | No | **Yes** |
+| Learned parameters | — | **0** |
 
-**Scope:** this PoC is the offline capture-quality gate only. OCR and content
-verification (expired ID, expected document type, …) stay a separate concern,
-per the PoC scope agreed with the SmallAI/Mifos team. The discrete verdict
-contract (`RETAKE | REVIEW | PASS`) is what gets ported to the Android / Kotlin
-runtime.
+## 2. How it works
 
-## 2. How the gate works
-
-```python
-from smallai.env import image_quality as iq
-
-signals = iq.extract(images)   # sharpness, contrast, ink_ratio, brightness, exposure
-verdict = iq.decide(signals)   # RETAKE | REVIEW | PASS
+```text
+image ──► resample to fixed analysis grid (max side 512)
+      ──► measure {sharpness, contrast, ink_ratio, brightness, exposure}
+      ──► decide() ──► RETAKE | REVIEW | PASS
 ```
 
-The signals are **document-aware and resolution-invariant**:
+The signals are **document-aware and resolution-invariant**, so the same
+thresholds work across capture devices and pixel sizes:
 
-- **Fixed analysis grid.** Every capture is resampled (pure-NumPy bilinear,
-  max side 512, aspect preserved) before measuring, so the signals — and every
-  threshold — transfer across capture devices and pixel sizes.
-- **sharpness** — mean gradient magnitude *inside the ink neighbourhood*
-  (1-px dilation of `luma < p90 − 0.25`); text-edge strength, the blur proxy.
-  Measuring only where the content is avoids the background dilution that makes
-  whole-frame mean gradient useless on paper-dominated documents.
-- **contrast** — `bg − p25(ink pixels)`: luminance contrast measured in the
-  ink region, ink-coverage independent (whole-frame `p99.5 − p0.5` only as a
-  no-ink fallback; percentile-rank contrast collapses whenever ink covers fewer
-  pixels than the percentile — verified on real faint-print captures).
+- **sharpness** — mean gradient magnitude *inside the ink neighbourhood* (1-px
+  dilation of `luma < p90 − 0.25`). Measuring only where the content is avoids
+  the background dilution that makes whole-frame mean gradient useless on
+  paper-dominated documents.
+- **contrast** — `bg − p25(ink pixels)`: contrast measured in the ink region, so
+  it is independent of ink coverage. (Whole-frame `p99.5 − p0.5` is used only as
+  a no-ink fallback; percentile-rank contrast collapses whenever ink covers
+  fewer pixels than the percentile.)
 - **ink_ratio** — fraction of pixels darker than `p90 − 0.25`: the "is there
-  actually content" detector (blank page / photo of a wall → ~0).
-- **brightness** — mean luma (feeds the too-dark gate).
-- **exposure** — `|mean luma − 0.5|` (reporting aid).
+  actually content" detector (blank page or photo of a wall → ~0).
+- **brightness** — mean luma.
+- **exposure** — `|mean luma − 0.5|`, a reporting aid.
 
-`decide(signals)` maps the signals to a discrete verdict:
+### Decision thresholds
 
-- **RETAKE** — unusable: too dark (`brightness < 0.10`), no detectable content
-  (`ink_ratio < 0.002`, blank page), or text edges genuinely destroyed
-  (`sharpness < 0.08`).
-- **REVIEW** — usable but borderline (`brightness < 0.25`, `contrast < 0.18`,
-  `ink_ratio < 0.003`, or `sharpness < 0.13`; the 0.08–0.13 zone is the
-  *readable-blur band*, see below).
-- **PASS** — usable → continue.
+| Signal | RETAKE below | REVIEW below |
+| --- | --- | --- |
+| `brightness` | 0.10 | 0.25 |
+| `ink_ratio` | 0.002 (blank) | 0.003 |
+| `sharpness` | 0.08 (unreadable) | 0.13 (soft) |
+| `contrast` | — | 0.18 |
 
 There is deliberately **no high-brightness gate**: white paper is the normal
-background of a document capture, and truly blank captures are caught by
+background of a document capture, and genuinely blank captures are caught by
 `ink_ratio ≈ 0`. All thresholds are overridable per call.
 
-The thresholds are **supervised-calibrated on the full 2000-image Kaggle
-corpus** (`priyanshuyav13/synthetic-medical-prescription-ocr-dataset`,
-`dataset/images`): normalized sharpness separates the metadata blur labels
-with no class overlap (blurred max 0.092 vs sharp-label floor 0.208). With
-the v3.1 cuts (RETAKE < 0.08, REVIEW < 0.13), the load-bearing guarantees are:
-**zero false rejects on all 952 sharp-labelled images, and zero blurred
-captures ever reach PASS** — every blurred-labelled capture is stopped (RETAKE
-or REVIEW), so nothing unreadable is ever silently forwarded to OCR.
+### The readable-blur band (v3.1)
 
-### v3.1 — the readable-blur band (field evidence)
+Camera blur on a physical page degrades differently from a synthetic blur
+kernel. A field capture of a printed VAT form was plainly human-readable at
+sharpness **0.088** — inside the blur corpus's own class range — so the
+hard-`RETAKE` cut sits at **0.08** and the 0.08–0.13 zone is `REVIEW`: flag it,
+let a human judge. The boundary is human-anchored and is the most fragile number
+in the gate (see §8).
 
-Field validation found the v3.0 hard-RETAKE cut (0.10) too aggressive for
-**real camera captures**: a blurry-but-clearly-human-readable printed form
-measured sharpness 0.088 — within the blur corpus's own class range. Camera
-blur degrades pages differently from the synthetic blur kernel, so 0.08–0.10
-is now REVIEW ("flag, human judges") and only < 0.08 is hard-RETAKE. All
-supervised guarantees hold; anchor caveat: the 0.08 boundary is human-anchored
-(one field capture) and sits safely above the blur corpus floor (0.072).
-
-## 3. Measured results
+## 3. Results
 
 ### Degradation sweep
 
-Deterministic sweep over a **document-like** synthetic corpus generated at the
-native analysis-grid size — 512×384 white paper + dashed near-1-px print
-strokes (`stage_b.make_document`), matching the real-capture feature space
-(ink ≈ 0.3–1% of pixels) — seed 0, 64 captures/level:
+Deterministic synthetic corpus at the native analysis-grid size (document-like
+white paper with near-1-px print strokes), seed 0, 64 captures per level:
 
-| Level | RETAKE | REVIEW | PASS | mean sharpness | mean contrast | mean ink | mean brightness |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| none (pristine) | 0.00 | 0.00 | **1.00** | 0.3692 | 0.858 | 0.0059 | 0.875 |
-| blur r=2 | 0.00 | 0.00 | **1.00** | 0.1972 | 0.679 | 0.0082 | 0.876 |
-| blur r=8 | 0.00 | **0.97** | 0.03 | 0.1204 | 0.480 | 0.0092 | 0.876 |
-| exposure ×0.1 | **1.00** | 0.00 | 0.00 | 0.0013 | 0.066 | 0.0000 | 0.087 |
+| Level | RETAKE | REVIEW | PASS | mean sharpness | mean contrast |
+| --- | --- | --- | --- | --- | --- |
+| none (pristine) | 0.00 | 0.00 | **1.00** | 0.3692 | 0.858 |
+| blur r=2 | 0.00 | 0.00 | **1.00** | 0.1972 | 0.679 |
+| blur r=8 | 0.00 | **0.97** | 0.03 | 0.1204 | 0.480 |
+| exposure ×0.1 | **1.00** | 0.00 | 0.00 | 0.0013 | 0.066 |
 
-- Pristine and mild-blur captures → **PASS**; borderline blur (`r=8`) →
-  **REVIEW** (the safety band); dark capture → **RETAKE**.
+Pristine and mildly blurred captures `PASS`; borderline blur lands in the
+`REVIEW` safety band; a dark capture is retaken.
 
-### Real corpus (2000 medical-prescription images)
+### Real corpus (2,000 prescription images)
 
-The full 2000-image Kaggle corpus is downloaded to `dataset/images/`
-(gitignored) and run through the gate via the streaming runner:
+| Metric | Result |
+| --- | --- |
+| Verdicts | RETAKE **10.3%** · REVIEW **20.35%** · PASS **69.35%** |
+| Sharp-labelled images (952) | **0 false rejects** — all `PASS` |
+| Blurred-labelled images | **0 reach `PASS`** (68 `RETAKE`, 131 `REVIEW`) |
+| Signal separation vs labels | blurred max sharpness 0.092 vs sharp-label floor 0.208 |
 
-```bash
-python -c "from smallai import stage_b as sb; print(sb.run_real_corpus('dataset/images'))"
-# n_images=2000, ~40 s, flat memory
-```
+Two guarantees are load-bearing: **nothing unreadable is silently forwarded to
+OCR**, and **nothing readable is rejected**.
 
-Result (n=2000, v3.1 gates): RETAKE **10.3%**, REVIEW **20.4%**, PASS
-**69.35%** — none of the 952 sharp-labelled images are rejected (they all
-PASS); every blurred-labelled capture is stopped (68 hard-retaken, 131
-flagged for human REVIEW, **zero PASS**). The first 3 mirror images
-(`data/prescriptions/`, 800×1000, visually verified readable) all **PASS**
-(mean sharpness 0.171, mean brightness 0.950); controlled degradations of
-them behave correctly: blur r=2/4/6 → **REVIEW** (mild or readable blur),
-blur r≥8 → **RETAKE** (text edges gone), ×0.3/×0.1 dark → **RETAKE**.
+### Performance
 
-Honest caveats (full details in the report): blur labels are soft for 849/2000
-images with inconsistent flagging between metadata rows; the corpus brightness
-range is 0.85–1.15 so the extreme-dark thresholds come from the controlled
-exposure ladder, not the corpus; the 0.08 readable-blur boundary is
-human-anchored (one field capture) — REVIEW is exactly where such judgment
-calls should live; rotation ±7° is out of scope.
+- **~14 ms per capture** end-to-end (signal extraction + decision), measured at
+  13.8 ms/capture over 50 corpus images on CPU.
+- Streaming corpus runner: 2,000 images in ~40 s with flat memory.
+- **27 tests**, lint-clean, no runtime dependency beyond NumPy and Pillow.
 
-Full write-up in `reports/AI-267_STAGE_B_RESULTS.md`.
+## 4. Install
 
-## 4. Run it on any image
-
-The `quality` command scores **any** image file (any format/size Pillow opens —
-PNG, JPG, WEBP, TIFF, …; iPhone HEIC too if `pip install pillow-heif` is run)
-or a whole folder of them, and reports the verdict plus the exact gates that
-tripped:
+Requires Python 3.10+. Runtime dependencies are `numpy` and `pillow`.
 
 ```bash
-python -m smallai quality --image shot.jpg                 # one photo
-python -m smallai quality --image shot1.jpg shot2.png     # several
-python -m smallai quality --image ~/Downloads/photo-dump/ # a whole folder
-python -m smallai quality --image shot.jpg --json         # machine-readable
+git clone https://github.com/reyyishreyas/smallai.git
+cd smallai
+make setup            # venv + editable install with dev extras
 ```
 
+Equivalent without `make`:
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -e ".[dev]"
 ```
-shot.jpg  4032×3024px
+
+The package is not published to PyPI; install from source.
+
+## 5. Usage
+
+### Command line
+
+```bash
+smallai quality --image photo.jpg                # one capture
+smallai quality --image a.jpg b.png d/           # several files or whole folders
+smallai quality --image d/ --json                # machine-readable
+```
+
+`python -m smallai …` works identically. Any format Pillow can read is accepted
+(PNG, JPEG, WEBP, TIFF, BMP …); iPhone HEIC works if `pillow-heif` is installed.
+Unreadable paths come back as an `ERROR` entry instead of crashing a batch.
+
+```console
+$ smallai quality --image dataset/images/prescription_1004.png
+
+prescription_1004.png  (dataset/images/prescription_1004.png)  710×466px
   VERDICT: RETAKE
-    sharpness  0.031
-    contrast   0.975
-    ink_ratio  0.2189
-    brightness 0.812
-    ⚠ unreadably blurry (sharpness 0.031 < 0.08)
+    sharpness  0.079   (RETAKE < 0.08, REVIEW < 0.13)
+    contrast   0.362   (REVIEW < 0.18)
+    ink_ratio  0.0093   (RETAKE < 0.002, REVIEW < 0.003)
+    brightness 0.908   (RETAKE < 0.10, REVIEW < 0.25)
+    ⚠ unreadably blurry (sharpness 0.079 < 0.08)
+
+summary: 1 image(s) — PASS 0, REVIEW 0, RETAKE 1  (0% pass)
 ```
 
-Sizing/resolution doesn't matter (everything is measured on the fixed analysis
-grid); a non-image file or unreadable path comes back as an `ERROR` entry
-instead of crashing the batch.
-
-## 5. Stage B-Q — a tiny RL capture gate (experimental)
-
-`stage_b_q.py` replaces the fixed thresholds with a **tabular Q-learning
-agent** — the lightest RL setup that deserves the name:
-
-- **State** — 4 signals quantized on hand-chosen bucket edges (≤ 216 states);
-  sharpness buckets include the v3.1 boundary (0.05 / 0.08 / 0.13 / 0.20)
-- **Actions** — `RETAKE | REVIEW | PASS` (same contract as the fixed gate)
-- **Reward** — `1 − cost(action, truth)` with an *asymmetric* cost matrix:
-  forwarding an unreadable capture (PASS-on-RETAKE, cost 2.0) is the worst
-  mistake; a wasted re-capture (RETAKE-on-PASS, cost 1.5) is mild
-- **Learning** — ε-greedy, off-policy Q-learning, one-step terminal episodes
-  (contextual-bandit formulation); deterministic seeds, pure NumPy
-- **Training data** — full-corpus soft blur labels plus real-ladder field
-  evidence (`samples_from_real_ladder`): blurred variants of real document
-  captures encode the human-judgment zones (sharp ≥ 0.13 → PASS, 0.08–0.13 →
-  REVIEW, < 0.08 / dark → RETAKE). The ladder source directory is configurable
-  via `--real-images` (default `data/prescriptions`, the 800×1000 mirror trio);
-  it was run over the full medical-prescription OCR corpus
-  (`dataset/images`, 2000 documents) to enlarge the real supervision.
-- **Deployment** — greedy policy; unseen states generalize to the nearest
-  trained state when it is within **L1 bucket distance ≤ 1** (signals move
-  continuously, so adjacent buckets share the physics), otherwise
-  **fail-closed** (truly novel → RETAKE). Inference never mutates the table.
-
-Trained on the full-corpus soft blur labels + real-ladder evidence (enlarged to
-the full 2000-image medical-prescription corpus) it converges to a
-**16-state, 48-parameter policy** with **learn-parity** against the supervised
-v3.1 gate: mean reward **0.8076** and agreement **0.648** on all 2000
-labeled images — the learned policy reproduces the supervised gate over the
-enlarged real evidence, learned purely from reward feedback, no thresholds
-hand-placed. Inference is **~14 ms/image** end-to-end (signal extraction +
-decision), full training **~2 s** on CPU. During rollout it discovers REVIEW
-hedges for ambiguous states on its own.
-
-Live-verified on real field captures (v3.1): truly-blurry photos → **RETAKE**
-with learned confidence, the blurry-but-readable form photo → **REVIEW**
-(Q[REVIEW] = 0.98), a dense-print bank statement → **PASS** (Q[PASS] = 0.98).
-
-```bash
-python -m smallai qgate                          # train + compare vs fixed gate (JSON)
-python -m smallai qgate --image photo.jpg        # verdicts from the learned policy
-python -m smallai qgate --real-images dataset/images  # train on the full medical corpus
+```json
+{
+  "path": "dataset/images/prescription_1004.png",
+  "size": [710, 466],
+  "signals": {
+    "sharpness": 0.07894,
+    "contrast": 0.36177,
+    "ink_ratio": 0.009277,
+    "brightness": 0.907778,
+    "exposure": 0.407778
+  },
+  "verdict": "RETAKE",
+  "reasons": ["unreadably blurry (sharpness 0.079 < 0.08)"]
+}
 ```
 
-Run the tests (`make test`) to see determinism, sweep-truth recovery, and the
-fail-closed path verified.
-
-## 6. Reproduce
+Other commands:
 
 ```bash
-make setup     # venv + editable install with dev extras (numpy, pillow, pytest, ruff)
-make check     # lint + full test suite
+smallai stage-b --images-dir dataset/images [--n 500]   # verdict distribution over a corpus
+smallai qgate [--real-images dataset/images]            # train + compare the Q variant
+```
+
+### Library
+
+```python
+import numpy as np
+from smallai.env import image_quality as iq
+
+images = np.zeros((1, 480, 640, 3), dtype=np.float32)   # RGB in [0, 1]
+
+signals = iq.extract(images)                            # dict of arrays
+verdicts = iq.decide_offline(images)                    # int verdict codes
+print(iq.verdict_name(int(verdicts[0])))                # "RETAKE"
+```
+
+For per-file results with reasons, use `smallai.stage_b.check_images(paths)`.
+
+## 6. Stage B-Q — a tiny RL gate (experimental)
+
+`stage_b_q.py` replaces the fixed thresholds with a **tabular Q-learning agent**:
+the lightest RL setup that deserves the name.
+
+- **State** — four signals quantised on hand-chosen bucket edges (≤216 states);
+  the sharpness buckets include the v3.1 boundaries (0.05 / 0.08 / 0.13 / 0.20).
+- **Actions** — `RETAKE | REVIEW | PASS`, the same contract as the fixed gate.
+- **Reward** — `1 − cost(action, truth)` with an asymmetric cost matrix:
+  forwarding an unreadable capture (`PASS` on `RETAKE`, cost 2.0) is the worst
+  mistake; a wasted re-capture (`RETAKE` on `PASS`, cost 1.5) is mild.
+- **Learning** — ε-greedy, off-policy Q-learning over one-step terminal episodes;
+  deterministic seeds, pure NumPy.
+- **Deployment** — greedy policy. Unseen states generalise to the nearest trained
+  state only within L1 bucket distance ≤ 1; anything further **fails closed** to
+  `RETAKE`. Inference never mutates the table.
+
+Trained on soft corpus labels plus real-ladder evidence from the full 2,000-image
+corpus, it converges to a **16-state, 48-parameter** policy with learn-parity
+against the fixed gate: **mean reward 0.8076 vs 0.8076**, per-image agreement
+0.648. (The default 3-image ladder gives a 9-state, 27-parameter table.) Training
+takes ~2 s on CPU.
+
+This stage is **experimental** — it is a research comparison, not the shipped
+policy.
+
+## 7. Verify
+
+```bash
+make check     # ruff check + ruff format --check + 27 tests
 make test      # tests only
-make lint      # ruff check src tests
+make lint      # lint only
 make build     # sdist + wheel in dist/
 make clean     # drop caches and generated artifacts
-
-python -m smallai quality --image <file-or-dir> [--json]   # or: smallai quality ...
-python -m smallai stage-b --images-dir dataset/images
-python -m smallai qgate
 ```
 
-Everything is seeded; a clean clone reproduces the same verdicts and result
-tables. Corpora (`dataset/`, `data/`, `runs/`) are not distributed with the
-repository — see §8.
+Everything is seeded: a clean clone reproduces the same verdicts and tables.
 
-## 7. Repo map
+## 8. Project structure
 
-```
-.
-├── src/smallai/
-│   ├── env/image_quality.py        # signal extraction + v3.1 gate thresholds
-│   ├── stage_b.py                  # fixed gate: extract → decide, sweep, corpus runner, check_images
-│   ├── stage_b_q.py                # experimental Q gate: quantization, QCaptureAgent, run_experiment
-│   ├── cli.py                      # quality / stage-b / qgate commands
-│   └── __main__.py                 # python -m smallai
-├── tests/                          # image-quality gate, Q-gate, determinism
-├── reports/AI-267_STAGE_B_RESULTS.md
-├── docs/                           # architecture, AI coding instructions, full context
-├── .github/                        # CI workflow, PR and issue templates
-├── dataset/                        # real corpora (gitignored)
-├── CONTRIBUTING.md                 # workflow, invariants, docs-sync rules
-├── CHANGELOG.md                    # Keep a Changelog
-├── SECURITY.md                     # private vulnerability reporting
-├── LICENSE                         # Apache License 2.0
-└── pyproject.toml                  # packaging, lint, test configuration
+```text
+src/smallai/
+  env/image_quality.py   signal extraction + v3.1 thresholds
+  stage_b.py             fixed gate: decide(), sweep, corpus runner, check_images
+  stage_b_q.py           experimental Q gate: quantisation, agent, experiment
+  cli.py                 quality / stage-b / qgate commands
+  __main__.py            python -m smallai
+tests/                   gate suite, Q-gate suite, determinism
+docs/                    ARCHITECTURE, AI coding instructions, full context
+reports/                 measured write-up
+.github/                 CI workflow, PR and issue templates
 ```
 
-## 8. Limitations & future work
+Corpora (`dataset/`, `data/`, `runs/`) are **not** distributed with the
+repository.
 
-- Blur labels are soft for 849/2000 corpus images (inconsistent flagging
-  between metadata rows); the extreme-dark thresholds come from the controlled
-  exposure ladder rather than the corpus's narrow brightness range.
-- The 0.08 readable-blur boundary is human-anchored (one field capture); REVIEW
-  is exactly where such judgment calls should live. Use policy-aware
-  calibration before deploying the gate as a hard guardrail.
-- Rotation ±7° is out of scope; the gate judges capture quality, not geometry.
-- The policy lives in the offline path only — OCR and content verification stay
-  a separate concern, per the agreed PoC scope.
-- Next: cross-implementation parity for the Go/Java/Rust MCP capture-gate
-  contracts, and the Android/Kotlin port binding to the stable
-  `RETAKE | REVIEW | PASS` contract.
+## 9. Design constraints
 
-## 9. Contributing
+1. **No LLM, transformer, or high-level ML library in the inference path.**
+   NumPy math; Pillow for IO only.
+2. **Deterministic.** Fixed seeds, pure NumPy, reproducible verdicts.
+3. **Stable contract.** `RETAKE | REVIEW | PASS` — no silent vocabulary changes.
+4. **Offline, CPU-only.** No network, GPU, or model download at inference.
+5. **Small.** Stage B has 0 learned parameters; Stage B-Q stays ≤216 states.
+
+## 10. Limitations
+
+- Blur labels are soft for **849/2000** corpus images (inconsistent flagging
+  between metadata rows), so the separation bound is softer than it looks.
+- The corpus brightness range is **0.85–1.15**; extreme-dark thresholds come from
+  a controlled exposure ladder rather than the corpus.
+- The **0.08** readable-blur boundary is human-anchored on a single field
+  capture. `REVIEW` exists precisely so such judgment calls stay with a human.
+- Calibration rests on **one** synthetic-blur corpus; a second independent corpus
+  has not been run yet.
+- Rotation ±7° is out of scope — the gate judges capture quality, not geometry.
+- The gate is a quality signal, not a security or content check.
+
+## 11. Roadmap
+
+- Validate on a second, independent real corpus (handwritten document sets).
+- Field-capture set to firm up the 0.08 boundary and the dark thresholds.
+- Analyse and reduce the Q-gate/fixed-gate disagreement (0.648).
+- Profile toward **< 10 ms** per capture.
+- Per-document-type policy calibration before hard-guardrail deployment.
+- Kotlin port of the verdict contract, with golden-vector conformance tests, and
+  parity across the Go/Java/Rust implementations.
+
+## 12. Contributing
 
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
-[`docs/AI_CODING_INSTRUCTIONS.md`](docs/AI_CODING_INSTRUCTIONS.md) before
-changing anything. In short:
+[`docs/AI_CODING_INSTRUCTIONS.md`](docs/AI_CODING_INSTRUCTIONS.md) first.
+`make check` must pass; behavior changes update the docs in the same change; the
+invariants in §9 are not negotiable.
 
-- `make check` must pass (ruff + tests).
-- Behavior changes update `README.md`, `reports/AI-267_STAGE_B_RESULTS.md` and
-  `docs/ARCHITECTURE.md` in the same pull request.
-- The invariants — non-LLM, deterministic, offline, stable verdict contract —
-  are not negotiable.
+Security reports: see [`SECURITY.md`](SECURITY.md) — please do not open a public
+issue.
 
-## 10. License
+## 13. License
 
 Apache License 2.0 — see [`LICENSE`](LICENSE).
