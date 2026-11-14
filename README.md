@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/reyyishreyas/smallai/actions/workflows/ci.yml/badge.svg)](https://github.com/reyyishreyas/smallai/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Dependencies: numpy + pillow](https://img.shields.io/badge/deps-numpy%20%2B%20pillow-informational)](pyproject.toml)
 
 **A non-LLM, pure-NumPy capture-quality gate for document photos.**
@@ -308,7 +307,3 @@ invariants in §9 are not negotiable.
 
 Security reports: see [`SECURITY.md`](SECURITY.md) — please do not open a public
 issue.
-
-## 13. License
-
-Apache License 2.0 — see [`LICENSE`](LICENSE).

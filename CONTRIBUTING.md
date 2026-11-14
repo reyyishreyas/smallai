@@ -69,8 +69,3 @@ never commit the images themselves.
 - Keep pull requests small and single-purpose.
 - Describe the **evidence** for any behavior change (commands run, numbers
   before/after), not just the code.
-
-## License
-
-By contributing you agree that your contribution is licensed under the
-Apache License 2.0 (see [`LICENSE`](LICENSE)).

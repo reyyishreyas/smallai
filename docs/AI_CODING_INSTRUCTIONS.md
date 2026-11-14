@@ -30,7 +30,7 @@ The repo's own docs for scope and design: `docs/ARCHITECTURE.md`, `reports/STAGE
 - `docs/CONTEXT.md` — project context and handoff (current state, invariants, next steps)
 - `.github/workflows/ci.yml` — CI: lint + tests on every push/PR (3.10–3.13)
 - `CONTRIBUTING.md` — contributor workflow, invariants, docs-sync rules
-- `CHANGELOG.md`, `SECURITY.md`, `LICENSE`, `.editorconfig`, `.gitattributes`
+- `CHANGELOG.md`, `SECURITY.md`, `.editorconfig`, `.gitattributes`
 - `pyproject.toml` — packaging metadata, console script, ruff + pytest config
 
 ## 4. How a behavior change should be made

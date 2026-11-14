@@ -8,8 +8,6 @@ version = "0.1.0"
 description = "Non-LLM, pure-NumPy offline document capture-quality gate: RETAKE | REVIEW | PASS"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Apache-2.0"
-license-files = ["LICENSE"]
 authors = [{ name = "Reyyi Shreyas", email = "reyyishreyas@gmail.com" }]
 keywords = [
     "document-capture",

@@ -145,8 +145,7 @@ image inference, ~2 s full training on CPU.
 - `reports/STAGE_B_RESULTS.md` — full measured write-up.
 - `dataset/` — real corpora (gitignored).
 - `.github/workflows/ci.yml` — lint + tests on push/PR (Python 3.10–3.13).
-- `CONTRIBUTING.md`, `CHANGELOG.md`, `SECURITY.md`, `LICENSE` — project
-  governance.
+- `CONTRIBUTING.md`, `CHANGELOG.md`, `SECURITY.md` — project governance.
 
 ## 8. Running it
 

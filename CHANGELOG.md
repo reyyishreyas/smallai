@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Continuous integration: tests and linting on every pull request.
-- `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, issue and pull-request templates.
+- `CONTRIBUTING.md`, `SECURITY.md`, issue and pull-request templates.
 
 ### Changed
 
@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/AI_267_FULL_CONTEXT.md` → `docs/CONTEXT.md` and
   `reports/AI-267_STAGE_B_RESULTS.md` → `reports/STAGE_B_RESULTS.md`.
 - README rewritten as standalone project documentation (no ticket framing).
+
+### Removed
+
+- `LICENSE` and the Apache-2.0 license metadata — no license is granted; all
+  rights are reserved by default.
 
 ## [0.1.0] — 2026-11-09
 
