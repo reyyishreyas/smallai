@@ -28,6 +28,10 @@ The repo's own docs for scope and design: `docs/ARCHITECTURE.md`, `reports/AI-26
 - `tests/` — Stage B gate and Stage B-Q suites
 - `data/`, `runs/`, `reports/`, `docs/`, `dataset/` (gitignored corpus)
 - `docs/AI_267_FULL_CONTEXT.md` — full AI handoff/context for AI-267 (current state, invariants, next steps)
+- `.github/workflows/ci.yml` — CI: lint + tests on every push/PR (3.10–3.13)
+- `CONTRIBUTING.md` — contributor workflow, invariants, docs-sync rules
+- `CHANGELOG.md`, `SECURITY.md`, `LICENSE`, `.editorconfig`, `.gitattributes`
+- `pyproject.toml` — packaging metadata, console script, ruff + pytest config
 
 ## 4. How a behavior change should be made
 
@@ -38,9 +42,11 @@ The repo's own docs for scope and design: `docs/ARCHITECTURE.md`, `reports/AI-26
 ## 5. Commands
 
 ```bash
-make setup     # venv + editable install
-make test      # PYTHONPATH=src .venv/bin/python -m pytest tests -q
-.venv/bin/ruff check src tests
+make setup     # venv + editable install with dev extras
+make check     # lint + tests (what CI runs)
+make test      # .venv/bin/python -m pytest
+make lint      # .venv/bin/ruff check src tests
+make build     # sdist + wheel
 python -m smallai quality --image <file-or-dir> --json
 python -m smallai qgate --image <file-or-dir>
 ```

@@ -144,12 +144,16 @@ image inference, ~2 s full training on CPU.
   Q-gate suites.
 - `reports/AI-267_STAGE_B_RESULTS.md` — full measured write-up.
 - `dataset/` — real corpora (gitignored).
+- `.github/workflows/ci.yml` — lint + tests on push/PR (Python 3.10–3.13).
+- `CONTRIBUTING.md`, `CHANGELOG.md`, `SECURITY.md`, `LICENSE` — project
+  governance.
 
 ## 8. Running it
 
 ```bash
 make setup                                   # venv + editable install
-make test                                    # full suite
+make check                                   # ruff + tests
+make build                                   # sdist + wheel
 python -m smallai quality --image <file>      # one capture
 python -m smallai quality --image <dir> --json
 python -m smallai stage-b --images-dir dataset/images

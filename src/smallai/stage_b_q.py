@@ -161,7 +161,7 @@ def samples_from_corpus(npz_path: str | Path = "runs/stage_b_corpus_scan.npz"
     d = np.load(npz_path, allow_pickle=True)
     sig = {k: d[k] for k in ("sharpness", "contrast", "ink_ratio", "brightness")}
     lab = np.asarray(d["lab"], dtype=np.float64)
-    experts = [RETAKE if l == 1 else (REVIEW if l == 0.5 else PASS) for l in lab]
+    experts = [RETAKE if label == 1 else (REVIEW if label == 0.5 else PASS) for label in lab]
     return quantize_signals(sig), experts
 
 
@@ -197,7 +197,7 @@ class QCaptureAgent:
         immediate expected reward of each (state, action) pair.
         """
         for _ in range(epochs):
-            for s, e in zip(states, experts):
+            for s, e in zip(states, experts, strict=True):
                 a = self.act(s)
                 r = REWARD[a, e]
                 row = self._ensure(s)
@@ -220,7 +220,7 @@ class QCaptureAgent:
             return s, 0
         best, best_d = None, None
         for ts in self.q:
-            d = sum(abs(a - b) for a, b in zip(s, ts))
+            d = sum(abs(a - b) for a, b in zip(s, ts, strict=False))
             if best_d is None or d < best_d:
                 best, best_d = ts, d
         if best is not None and best_d <= 1:

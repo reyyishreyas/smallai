@@ -1,26 +1,88 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "smallai"
 version = "0.1.0"
-description = "Non-LLM offline document capture-quality gate: real image signals -> RETAKE | REVIEW | PASS (pure NumPy)"
+description = "Non-LLM, pure-NumPy offline document capture-quality gate: RETAKE | REVIEW | PASS"
+readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Reyyi Shreyas", email = "reyyishreyas@gmail.com" }]
+keywords = [
+    "document-capture",
+    "image-quality",
+    "ocr-preprocessing",
+    "non-llm",
+    "numpy",
+    "edge",
+    "offline",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "numpy>=1.24",
     "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.4"]
+dev = [
+    "build>=1.0",
+    "pytest>=7",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+smallai = "smallai.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/reyyishreyas/smallai"
+Repository = "https://github.com/reyyishreyas/smallai"
+Issues = "https://github.com/reyyishreyas/smallai/issues"
+Changelog = "https://github.com/reyyishreyas/smallai/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/reyyishreyas/smallai/blob/main/docs/ARCHITECTURE.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
+minversion = "7.0"
 testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-config --strict-markers"
 
 [tool.ruff]
 line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+extend-exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["smallai"]
+
+[tool.ruff.format]
+quote-style = "double"

@@ -327,7 +327,9 @@ def check_images(paths: list[str | Path]) -> list[dict]:
     return out
 
 
-def load_images_from_dir(directory: str | Path, pattern: str = "*.png", n: int | None = None) -> np.ndarray:
+def load_images_from_dir(
+    directory: str | Path, pattern: str = "*.png", n: int | None = None
+) -> np.ndarray:
     """Load images from a directory (sorted by name) -> (N, H, W, 3) float in [0, 1].
 
     Uses Pillow only for IO; all quality math stays pure NumPy. `n` truncates

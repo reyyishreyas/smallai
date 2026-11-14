@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in the gate or CLI behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please do not attach private document images —
+        reproduce with a synthetic image or describe the signals instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The verdict or output you got, and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        python -m smallai quality --image sample.png --json
+    validations:
+      required: true
+  - type: textarea
+    id: signals
+    attributes:
+      label: Signals reported
+      description: Paste the sharpness / contrast / ink_ratio / brightness values if available.
+      render: json
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.1.0 / 76af3d6
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Python 3.12, numpy 2.x, Pillow 11.x, macOS 15
+    validations:
+      required: true

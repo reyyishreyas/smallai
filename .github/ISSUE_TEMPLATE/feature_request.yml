@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a change in scope, signals, or tooling
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SmallAI is deliberately constrained (no LLM, deterministic, offline).
+        Requests that break those invariants will be declined.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The smallest change that solves it.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Images, signal measurements, or corpus numbers that support the change.
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariants
+      options:
+        - label: This stays non-LLM and pure NumPy in the inference path
+        - label: This stays deterministic and offline
+        - label: This does not change the `RETAKE | REVIEW | PASS` contract

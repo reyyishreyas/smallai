@@ -98,7 +98,9 @@ def test_extract_resolution_invariance():
     s1 = iq.extract(img)
     s2 = iq.extract(big)
     assert iq.verdict_name(iq.decide(s1)[0]) == iq.verdict_name(iq.decide(s2)[0])
-    assert abs(float(s1["sharpness"][0]) - float(s2["sharpness"][0])) < 0.2 * abs(float(s1["sharpness"][0]))
+    assert abs(float(s1["sharpness"][0]) - float(s2["sharpness"][0])) < (
+        0.2 * abs(float(s1["sharpness"][0]))
+    )
 
 
 def test_sweep_deterministic():
@@ -131,7 +133,9 @@ def test_load_images_from_dir(tmp_path):
     from PIL import Image
 
     for name, val in (("a.png", 0.5), ("b.png", 0.2)):
-        Image.fromarray(np.full((8, 8, 3), round(val * 255), dtype=np.uint8), "RGB").save(tmp_path / name)
+        Image.fromarray(
+            np.full((8, 8, 3), round(val * 255), dtype=np.uint8), "RGB"
+        ).save(tmp_path / name)
     imgs = sb.load_images_from_dir(tmp_path, n=2)
     assert imgs.shape[0] == 2
     assert imgs.shape[1:] == (8, 8, 3)

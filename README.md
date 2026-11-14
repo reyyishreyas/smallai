@@ -1,5 +1,10 @@
 # SmallAI — Document Capture-Quality Gate
 
+[![CI](https://github.com/reyyishreyas/smallai/actions/workflows/ci.yml/badge.svg)](https://github.com/reyyishreyas/smallai/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Dependencies: numpy + pillow](https://img.shields.io/badge/deps-numpy%20%2B%20pillow-informational)](pyproject.toml)
+
 **Pre-registered PoC for Mifos AI-267** — lightweight decision policies with
 cost-aware re-verification.
 
@@ -222,16 +227,21 @@ fail-closed path verified.
 ## 6. Reproduce
 
 ```bash
-make setup     # venv + editable install
-make test      # unit tests: signals, gate, Q-gate, determinism
-make clean     # drop caches (data/, runs/)
-python -m smallai quality --image <file-or-dir> [--json]
+make setup     # venv + editable install with dev extras (numpy, pillow, pytest, ruff)
+make check     # lint + full test suite
+make test      # tests only
+make lint      # ruff check src tests
+make build     # sdist + wheel in dist/
+make clean     # drop caches and generated artifacts
+
+python -m smallai quality --image <file-or-dir> [--json]   # or: smallai quality ...
 python -m smallai stage-b --images-dir dataset/images
 python -m smallai qgate
 ```
 
 Everything is seeded; a clean clone reproduces the same verdicts and result
-tables.
+tables. Corpora (`dataset/`, `data/`, `runs/`) are not distributed with the
+repository — see §8.
 
 ## 7. Repo map
 
@@ -245,8 +255,14 @@ tables.
 │   └── __main__.py                 # python -m smallai
 ├── tests/                          # image-quality gate, Q-gate, determinism
 ├── reports/AI-267_STAGE_B_RESULTS.md
-├── docs/                           # AI coding instructions, architecture, full context
-└── dataset/                        # real corpora (gitignored)
+├── docs/                           # architecture, AI coding instructions, full context
+├── .github/                        # CI workflow, PR and issue templates
+├── dataset/                        # real corpora (gitignored)
+├── CONTRIBUTING.md                 # workflow, invariants, docs-sync rules
+├── CHANGELOG.md                    # Keep a Changelog
+├── SECURITY.md                     # private vulnerability reporting
+├── LICENSE                         # Apache License 2.0
+└── pyproject.toml                  # packaging, lint, test configuration
 ```
 
 ## 8. Limitations & future work
@@ -263,3 +279,19 @@ tables.
 - Next: cross-implementation parity for the Go/Java/Rust MCP capture-gate
   contracts, and the Android/Kotlin port binding to the stable
   `RETAKE | REVIEW | PASS` contract.
+
+## 9. Contributing
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`docs/AI_CODING_INSTRUCTIONS.md`](docs/AI_CODING_INSTRUCTIONS.md) before
+changing anything. In short:
+
+- `make check` must pass (ruff + tests).
+- Behavior changes update `README.md`, `reports/AI-267_STAGE_B_RESULTS.md` and
+  `docs/ARCHITECTURE.md` in the same pull request.
+- The invariants — non-LLM, deterministic, offline, stable verdict contract —
+  are not negotiable.
+
+## 10. License
+
+Apache License 2.0 — see [`LICENSE`](LICENSE).

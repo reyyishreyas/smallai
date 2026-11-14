@@ -34,7 +34,7 @@ def test_q_agent_learns_sweep_truth():
     agent = sbq.QCaptureAgent(seed=2)
     agent.learn(states, experts, epochs=40)
     actions = agent.predict(states)
-    assert np.mean([a == e for a, e in zip(actions, experts)]) >= 0.95
+    assert np.mean([a == e for a, e in zip(actions, experts, strict=True)]) >= 0.95
     # the whole table stays tiny
     st = agent.stats()
     assert st["n_params"] <= st["max_possible_states"] * 3
@@ -56,8 +56,8 @@ def test_agent_predicts_hard_levels():
     states, experts = sbq.samples_from_sweep(n_docs=12, seed=0)
     agent = sbq.QCaptureAgent(seed=0)
     agent.learn(states, experts, epochs=60)
-    dark = [s for s, e in zip(states, experts) if s[2] == 0]      # bright bucket 0
-    sharp = [s for s, e in zip(states, experts) if s[0] >= 4]     # very sharp
+    dark = [s for s, e in zip(states, experts, strict=True) if s[2] == 0]      # bright bucket 0
+    sharp = [s for s, e in zip(states, experts, strict=True) if s[0] >= 4]     # very sharp
     got_dark = {agent.act(s, greedy=True) for s in dark}
     got_sharp = {agent.act(s, greedy=True) for s in sharp}
     assert got_dark == {iq.RETAKE}
@@ -114,7 +114,7 @@ def test_resolve_state_generalizes_or_fails_closed():
     # find a truly novel state (>= 2 L1 bucket units from everything trained)
     far = None
     for cand in [(4, 2, 3, 2), (0, 0, 0, 0), (2, 2, 2, 2)]:
-        d_best = min(sum(abs(a - b) for a, b in zip(cand, t)) for t in agent.q)
+        d_best = min(sum(abs(a - b) for a, b in zip(cand, t, strict=False)) for t in agent.q)
         if d_best >= 2:
             far = cand
             break
