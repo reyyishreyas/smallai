@@ -44,8 +44,8 @@ A threshold may only move through the supervised procedure in
 - calibrate against the full labelled corpus plus field evidence,
 - keep the two load-bearing guarantees (zero false rejects on sharp-labelled
   images; nothing blurred-labelled reaches `PASS`),
-- update `README.md`, `reports/AI-267_STAGE_B_RESULTS.md` and
-  `docs/ARCHITECTURE.md` in the same pull request.
+- update `README.md`, `reports/STAGE_B_RESULTS.md` and `docs/ARCHITECTURE.md`
+  in the same pull request.
 
 Do not hand-tune thresholds to make a single example pass.
 

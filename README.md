@@ -259,8 +259,8 @@ src/smallai/
   cli.py                 quality / stage-b / qgate commands
   __main__.py            python -m smallai
 tests/                   gate suite, Q-gate suite, determinism
-docs/                    ARCHITECTURE, AI coding instructions, full context
-reports/                 measured write-up
+docs/                    ARCHITECTURE, AI coding instructions, CONTEXT
+reports/                 STAGE_B_RESULTS.md — measured write-up
 .github/                 CI workflow, PR and issue templates
 ```
 

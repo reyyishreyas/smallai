@@ -1,4 +1,4 @@
-# AI-267 Stage B — Real image-quality signals + offline decision policy (v3.1)
+# Stage B — Real image-quality signals + offline decision policy (v3.1)
 
 **Repository:** reyyishreyas/smallai · **Stage:** B · **Status:** scored (v3.1, supervised calibration on the full 2000-image corpus + field-validated readable-blur band)
 
@@ -192,13 +192,13 @@ narrow 0.08–0.13 boundary shift), which is a feature: v3.1 only changed the
   (dark RETAKE at 0.10, REVIEW at 0.25) come from the controlled exposure
   ladder, not the corpus.
 - Rotation ±7° in the corpus is mostly benign for quality (no angle gate is
-  attempted in Stage B; deskew belongs to OCR/Stage C).
+  attempted in Stage B; deskew belongs to OCR/preprocessing).
 - The **0.08 readable-blur boundary is human-anchored**: one field capture
   (the VAT form) plus the blur-corpus floor (0.072). REVIEW exists precisely
   for this zone; every field capture landing there should be collected and
   used for future recalibration (no retraining needed — thresholds only).
 - v3.1 changed the fixed gate; the branch also carries a learned Q-variant of
-  it (Stage B-Q, §12 README) trained on the corpus soft labels + real-ladder
+  it (Stage B-Q, README §6) trained on the corpus soft labels + real-ladder
   human-judgment evidence — learn-parity with this gate (now **0.8076 vs 0.8076**,
   i.e. exact parity, over the enlarged real-ladder training set), 16 states /
   48 parameters.
@@ -211,17 +211,17 @@ narrow 0.08–0.13 boundary shift), which is a feature: v3.1 only changed the
   exposure`, all at the analysis-grid resolution); v3.1 changed one threshold
   value, not the semantics.
 - OCR and content verification (expired ID, expected document type, person
-  match) stay **separate**, per the PoC scope agreed with the SmallAI/Mifos
-  team (`dataset/labels.csv` medicine/dosage fields are Stage C material).
+  match) stay **separate** by design: the gate judges capture quality only
+  (`dataset/labels.csv` medicine/dosage fields are out of scope for Stage B).
 
 ## Reproduce
 
 ```bash
-make test          # includes Stage B policy + gate tests (v3.1)
-PYTHONPATH=src python -c "from smallai import stage_b as sb; print(sb.run_sweep(seed=0))"
-PYTHONPATH=src python -m smallai stage-b --images-dir data/prescriptions --n 10
-PYTHONPATH=src python -c "from smallai import stage_b as sb; \
-print(sb.run_real_corpus('dataset/images'))"   # 2000 images, ~40 s
-PYTHONPATH=src python -m smallai quality --image shot.jpg   # any real capture
-PYTHONPATH=src python -m smallai qgate --real-images dataset/images   # Q-gate on the full corpus
+make check          # lint + tests, including the Stage B policy and gate tests (v3.1)
+make build          # verify packaging
+python -m smallai stage-b --images-dir dataset/images
+python -m smallai quality --image shot.jpg   # any real capture
+python -m smallai qgate --real-images dataset/images   # Q-gate on the full corpus
+python -c "from smallai import stage_b as sb; print(sb.run_sweep(seed=0))"
+python -c "from smallai import stage_b as sb; print(sb.run_real_corpus('dataset/images'))"  # 2000 images, ~40 s
 ```

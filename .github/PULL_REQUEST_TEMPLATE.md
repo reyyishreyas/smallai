@@ -10,7 +10,7 @@
 - [ ] New or changed behavior is covered by a test
 - [ ] Docs updated in this PR if behavior changed:
   - [ ] `README.md`
-  - [ ] `reports/AI-267_STAGE_B_RESULTS.md`
+  - [ ] `reports/STAGE_B_RESULTS.md`
   - [ ] `docs/ARCHITECTURE.md`
 - [ ] No change to the `RETAKE | REVIEW | PASS` contract (or the change was
       explicitly agreed and documented)

@@ -1,4 +1,4 @@
-# ARCHITECTURE — SmallAI capture-quality gate (AI-267)
+# ARCHITECTURE — SmallAI capture-quality gate
 
 *One decision-maker for one job: is this document capture usable?*
 *Pure NumPy. No neural nets, no LLM, no CV/ML library.*
@@ -18,16 +18,16 @@ reviewer's time later. This project builds that decision-maker:
 
 It is *not* a document-content model (it does not read what the ID
 says). It is a capture-quality gate — the first stage of a longer
-pipeline; OCR and content verification stay separate concerns, per the
-PoC scope agreed with the SmallAI/Mifos team.
+pipeline. OCR and content verification stay separate concerns by
+design: the gate judges the capture, not the content.
 
 ## 1. The constraints and what each one forces
 
-| Ticket constraint (AI-267) | Rules out | What we built instead |
+| Constraint | Rules out | What we built instead |
 |---|---|---|
 | From scratch, no black-box ML | sklearn / xgboost / torch / OpenCV in the core | hand-written signal math (pure NumPy bilinear resample, gradients, percentiles) |
 | Strictly non-LLM, non-transformer, no neural net in the inference path | any learned model in the shipped path | fixed, supervised-calibrated thresholds (0 learned params) |
-| < 10 ms CPU | heavyweight inference | grid-resampled vectorized NumPy ops (~14 ms/image including IO) |
+| Fast on CPU (target < 10 ms) | heavyweight inference | grid-resampled vectorized NumPy ops (~14 ms/image including IO) |
 | Deterministic | hidden randomness | fixed seeds, pure NumPy math, reproducible verdicts |
 | Stable verdict contract | ad-hoc labels | `RETAKE \| REVIEW \| PASS` — the interface the Android/Kotlin port binds to |
 | No dataset exists for real captures | naive threshold guessing | supervised calibration on a full 2000-image labelled corpus + field evidence |
@@ -111,7 +111,7 @@ with the v3.1 cuts:
 
 The 0.08 hard-RETAKE boundary is human-anchored (one field capture) and sits
 safely above the blur corpus floor (0.072). Full procedure and evidence:
-`reports/AI-267_STAGE_B_RESULTS.md`.
+`reports/STAGE_B_RESULTS.md`.
 
 ## 6. Stage B-Q (`stage_b_q.py`) — the experimental RL gate
 
@@ -142,7 +142,7 @@ image inference, ~2 s full training on CPU.
 - `src/smallai/cli.py` — `quality`, `stage-b`, `qgate` commands.
 - `tests/test_image_quality_stage_b.py`, `tests/test_stage_b_q.py` — gate and
   Q-gate suites.
-- `reports/AI-267_STAGE_B_RESULTS.md` — full measured write-up.
+- `reports/STAGE_B_RESULTS.md` — full measured write-up.
 - `dataset/` — real corpora (gitignored).
 - `.github/workflows/ci.yml` — lint + tests on push/PR (Python 3.10–3.13).
 - `CONTRIBUTING.md`, `CHANGELOG.md`, `SECURITY.md`, `LICENSE` — project

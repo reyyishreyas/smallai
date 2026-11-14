@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Continuous integration: tests and linting on every pull request.
 - `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, issue and pull-request templates.
 
+### Changed
+
+- CI actions updated to `actions/checkout@v7`, `actions/setup-python@v7` and
+  `actions/upload-artifact@v7`; the runner image is pinned to `ubuntu-24.04`
+  instead of the migrating `ubuntu-latest` label.
+- Internal docs re-branded as standalone project documentation:
+  `docs/AI_267_FULL_CONTEXT.md` → `docs/CONTEXT.md` and
+  `reports/AI-267_STAGE_B_RESULTS.md` → `reports/STAGE_B_RESULTS.md`.
+- README rewritten as standalone project documentation (no ticket framing).
+
 ## [0.1.0] — 2026-11-09
 
 ### Added
@@ -32,8 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reward, `0.648` per-image agreement on 2000 labelled images), fail-closed on
   novel states.
 - **Documentation** — `README.md`, `docs/ARCHITECTURE.md`,
-  `docs/AI_CODING_INSTRUCTIONS.md`, `docs/AI_267_FULL_CONTEXT.md`, and
-  `reports/AI-267_STAGE_B_RESULTS.md`.
+  `docs/AI_CODING_INSTRUCTIONS.md`, `docs/CONTEXT.md`, and
+  `reports/STAGE_B_RESULTS.md`.
 
 ### Removed
 

@@ -1,12 +1,12 @@
-"""Stage B (AI-267): real image-quality signals + offline decision policy (v3).
+"""Stage B: real image-quality signals + offline decision policy (v3).
 
 Real image-quality signals are measured directly from the captured document
 image, and the discrete decision (RETAKE / REVIEW / PASS) stays a policy that
-is separate from OCR / content verification (Victor's PoC scope).
+is separate from OCR / content verification.
 
 Everything here is implemented from scratch with NumPy only — no CV/ML
 libraries and no LLM in the inference path. The policy stays tiny and fully
-offline, which is the property the PoC is validating.
+offline, which is the property this module is designed around.
 
 v2 — document-aware feature engineering
 ---------------------------------------
@@ -287,9 +287,9 @@ def decide(
 def decide_offline(images: np.ndarray, **kwargs) -> np.ndarray:
     """Full offline decision gate: images -> verdict (RETAKE | REVIEW | PASS).
 
-    This is the single entry point the field-officer mobile runtime (and the
-    PoC CLI) uses: measure real quality signals from the captured image, then
-    apply the discrete offline policy.
+    This is the single entry point a mobile or server runtime uses: measure
+    real quality signals from the captured image, then apply the discrete
+    offline policy.
     """
     return decide(extract(images), **kwargs)
 

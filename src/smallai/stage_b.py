@@ -1,4 +1,4 @@
-"""Stage B (AI-267) — real image-quality signals through the offline gate.
+"""Stage B — real image-quality signals through the offline gate.
 
 This module measures *real* quality signals from captured document images and
 applies the discrete offline policy (RETAKE / REVIEW / PASS).

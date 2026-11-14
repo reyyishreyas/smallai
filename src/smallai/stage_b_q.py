@@ -1,4 +1,4 @@
-"""Stage B-Q (AI-267, experimental): a tiny tabular Q-learning capture gate.
+"""Stage B-Q (experimental): a tiny tabular Q-learning capture gate.
 
 This branch replaces the v3 *fixed* thresholds with a **learned** policy — the
 lightest weight RL setup that still deserves the name:
