@@ -34,6 +34,7 @@ Expert labels (the reward source):
 
 Everything is deterministic (fixed seeds) and pure NumPy.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -63,12 +64,14 @@ _STATE_KEYS = ("sharpness", "ink_ratio", "brightness", "contrast")
 
 # cost[action][expert] — how much a wrong decision costs the pipeline.
 # Rows: the action taken. Columns: the expert (ground-truth) verdict.
-COST = np.array([
-    # expert:   RETAKE  REVIEW  PASS
-    [0.0,       0.5,    1.5],   # action RETAKE (wasted re-capture on a good shot)
-    [0.75,      0.0,    0.5],   # action REVIEW (extra human round)
-    [2.0,       0.5,    0.0],   # action PASS (forwarding an unreadable capture!)
-])
+COST = np.array(
+    [
+        # expert:   RETAKE  REVIEW  PASS
+        [0.0, 0.5, 1.5],  # action RETAKE (wasted re-capture on a good shot)
+        [0.75, 0.0, 0.5],  # action REVIEW (extra human round)
+        [2.0, 0.5, 0.0],  # action PASS (forwarding an unreadable capture!)
+    ]
+)
 REWARD = 1.0 - COST  # reward[a, e]
 
 
@@ -82,8 +85,7 @@ def quantize_signals(signals: dict[str, np.ndarray]) -> list[tuple[int, ...]]:
     return [tuple(int(buckets[k][i]) for k in _STATE_KEYS) for i in range(n)]
 
 
-def samples_from_sweep(n_docs: int = 24, seed: int = 0
-                       ) -> tuple[list[tuple[int, ...]], list[int]]:
+def samples_from_sweep(n_docs: int = 24, seed: int = 0) -> tuple[list[tuple[int, ...]], list[int]]:
     """Build (state, expert) samples from the degradation sweep corpus.
 
     Ground truth comes from the sweep level itself: pristine and mild blur are
@@ -108,8 +110,8 @@ def samples_from_sweep(n_docs: int = 24, seed: int = 0
 
 
 def samples_from_real_ladder(
-        directory: str | Path = "data/prescriptions",
-        seed: int = 0) -> tuple[list[tuple[int, ...]], list[int]]:
+    directory: str | Path = "data/prescriptions", seed: int = 0
+) -> tuple[list[tuple[int, ...]], list[int]]:
     """(state, expert) samples from the real 800x1000 mirror trio ladder.
 
     Encodes the v3.1 field evidence in training data: real camera blur on a
@@ -129,8 +131,13 @@ def samples_from_real_ladder(
     for f in files:
         with Image.open(f) as im:
             base = np.asarray(im.convert("RGB"), dtype=np.float64) / 255.0
-        for kind, lvl in (("blur", 1.0), ("blur", 2.0), ("blur", 3.0),
-                          ("blur", 4.0), ("exposure", 0.2)):
+        for kind, lvl in (
+            ("blur", 1.0),
+            ("blur", 2.0),
+            ("blur", 3.0),
+            ("blur", 4.0),
+            ("exposure", 0.2),
+        ):
             img = sb.corrupt(base[None], kind, lvl, rng)
             sig = iq.extract(img)
             states.append(quantize_signals(sig)[0])
@@ -150,8 +157,9 @@ def samples_from_real_ladder(
     return states, experts
 
 
-def samples_from_corpus(npz_path: str | Path = "runs/stage_b_corpus_scan.npz"
-                        ) -> tuple[list[tuple[int, ...]], list[int]]:
+def samples_from_corpus(
+    npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
+) -> tuple[list[tuple[int, ...]], list[int]]:
     """(state, expert) samples from the full-corpus scan cache.
 
     Requires `runs/stage_b_corpus_scan.npz` (see the Stage B report for how it
@@ -188,8 +196,7 @@ class QCaptureAgent:
         return int(np.argmax(row))  # deterministic tie-break
 
     # -- learning ----------------------------------------------------------------
-    def learn(self, states: list[tuple[int, ...]], experts: list[int],
-              epochs: int = 40) -> dict:
+    def learn(self, states: list[tuple[int, ...]], experts: list[int], epochs: int = 40) -> dict:
         """Off-policy Q-learning over terminal one-step episodes.
 
         Every step: a = act(s); r = REWARD[a, e]; Q[s,a] += α(r − Q[s,a]).
@@ -247,8 +254,7 @@ class QCaptureAgent:
         return {
             "n_states": len(self.q),
             "n_params": sum(row.size for row in self.q.values()),
-            "max_possible_states": int(np.prod(
-                [len(ed) + 1 for ed in STATE_EDGES.values()])),
+            "max_possible_states": int(np.prod([len(ed) + 1 for ed in STATE_EDGES.values()])),
         }
 
 
@@ -263,15 +269,18 @@ def evaluate(actions: list[int], experts: list[int]) -> dict:
         "mean_reward": float(REWARD[a, e].mean()),
         "mean_cost": float(COST[a, e].mean()),
         "agreement": float((a == e).mean()),
-        "confusion": np.array([[int(((a == i) & (e == j)).sum())
-                                for j in range(3)] for i in range(3)]).tolist(),
+        "confusion": np.array(
+            [[int(((a == i) & (e == j)).sum()) for j in range(3)] for i in range(3)]
+        ).tolist(),
     }
 
 
-def check_images_with_q(paths: list[str | Path],
-                        npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
-                        real_ladder_dir: str | Path = "data/prescriptions",
-                        seed: int = 0) -> list[dict]:
+def check_images_with_q(
+    paths: list[str | Path],
+    npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
+    real_ladder_dir: str | Path = "data/prescriptions",
+    seed: int = 0,
+) -> list[dict]:
     """Score arbitrary image files with the *learned* Q-policy (demo path).
 
     Uses `stage_b.check_images` for the per-image signals, then maps each
@@ -306,25 +315,30 @@ def check_images_with_q(paths: list[str | Path],
             # never PASS what the policy has no value estimates for
             qv = np.zeros(len(DECISION_NAMES))
             r.setdefault("reasons", []).append(
-                "unseen state — fail-closed default (no training evidence)")
+                "unseen state — fail-closed default (no training evidence)"
+            )
             r["state_used"] = None
         else:
             qv = agent.q[resolved]
             r["state_used"] = list(resolved)
             if dist > 0:
                 r.setdefault("reasons", []).append(
-                    f"state generalized {dist} bucket(s) away from a trained state")
+                    f"state generalized {dist} bucket(s) away from a trained state"
+                )
         r["state"] = list(state)
         r["verdict_q"] = DECISION_NAMES[int(np.argmax(qv))]
         r["q_values"] = [round(float(x), 3) for x in qv]
         r["verdict_fixed"] = iq.verdict_name(
-            int(iq.decide({k: np.array([r["signals"][k]]) for k in _STATE_KEYS})[0]))
+            int(iq.decide({k: np.array([r["signals"][k]]) for k in _STATE_KEYS})[0])
+        )
     return results
 
 
-def run_experiment(npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
-                   real_ladder_dir: str | Path = "data/prescriptions",
-                   seed: int = 0) -> dict:
+def run_experiment(
+    npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
+    real_ladder_dir: str | Path = "data/prescriptions",
+    seed: int = 0,
+) -> dict:
     """Train the Q gate and compare it with the fixed v3 thresholds.
 
     Uses the full-corpus scan when the npz cache exists (2000 supervised

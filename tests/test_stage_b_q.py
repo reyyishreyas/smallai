@@ -1,4 +1,5 @@
 """Tests for the Stage B-Q tabular Q-learning capture gate (experimental)."""
+
 import numpy as np
 
 from smallai import stage_b_q as sbq
@@ -13,10 +14,10 @@ def test_quantize_signals_bins():
         "contrast": np.array([0.05, 0.25, 0.9, 0.25, 0.9]),
     }
     states = sbq.quantize_signals(sig)
-    assert states[0] == (0, 0, 0, 0)          # all bottom buckets
-    assert states[1] == (1, 1, 3, 1)          # just above the edge cutoffs
-    assert states[3] == (3, 2, 3, 1)          # mid buckets
-    assert states[4] == (4, 2, 3, 2)          # top sharpness bucket
+    assert states[0] == (0, 0, 0, 0)  # all bottom buckets
+    assert states[1] == (1, 1, 3, 1)  # just above the edge cutoffs
+    assert states[3] == (3, 2, 3, 1)  # mid buckets
+    assert states[4] == (4, 2, 3, 2)  # top sharpness bucket
     # dense print (ink 0.25) is NOT an outlier bucket — no upper ink cut
     assert len(set(states)) == 5
     assert sbq.STATE_EDGES["ink_ratio"] == (0.002, 0.003)
@@ -56,8 +57,8 @@ def test_agent_predicts_hard_levels():
     states, experts = sbq.samples_from_sweep(n_docs=12, seed=0)
     agent = sbq.QCaptureAgent(seed=0)
     agent.learn(states, experts, epochs=60)
-    dark = [s for s, e in zip(states, experts, strict=True) if s[2] == 0]      # bright bucket 0
-    sharp = [s for s, e in zip(states, experts, strict=True) if s[0] >= 4]     # very sharp
+    dark = [s for s, e in zip(states, experts, strict=True) if s[2] == 0]  # bright bucket 0
+    sharp = [s for s, e in zip(states, experts, strict=True) if s[0] >= 4]  # very sharp
     got_dark = {agent.act(s, greedy=True) for s in dark}
     got_sharp = {agent.act(s, greedy=True) for s in sharp}
     assert got_dark == {iq.RETAKE}
@@ -86,7 +87,7 @@ def test_check_images_with_q(tmp_path):
     res = sbq.check_images_with_q([p], npz_path=tmp_path / "absent.npz")  # sweep fallback
     r = res[0]
     assert r["verdict_q"] == "PASS"
-    assert r["verdict_fixed"] == "PASS"   # policies agree on an obvious doc
+    assert r["verdict_fixed"] == "PASS"  # policies agree on an obvious doc
     assert len(r["state"]) == 4
     assert max(r["q_values"]) > min(r["q_values"])  # the agent actually learned
 

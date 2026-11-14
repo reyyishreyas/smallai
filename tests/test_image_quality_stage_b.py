@@ -1,4 +1,5 @@
 """Stage B tests: real image-quality signals + offline decision policy (v2)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -124,8 +125,10 @@ def test_make_document_deterministic():
 
 def test_make_document_passes_gate():
     # pristine synthetic documents should land in the usable band
-    verdicts = [int(iq.decide_offline(sb.make_document(np.random.default_rng(i))[None])[0])
-                for i in range(8)]
+    verdicts = [
+        int(iq.decide_offline(sb.make_document(np.random.default_rng(i))[None])[0])
+        for i in range(8)
+    ]
     assert all(v == iq.PASS for v in verdicts)
 
 
@@ -133,9 +136,9 @@ def test_load_images_from_dir(tmp_path):
     from PIL import Image
 
     for name, val in (("a.png", 0.5), ("b.png", 0.2)):
-        Image.fromarray(
-            np.full((8, 8, 3), round(val * 255), dtype=np.uint8), "RGB"
-        ).save(tmp_path / name)
+        Image.fromarray(np.full((8, 8, 3), round(val * 255), dtype=np.uint8), "RGB").save(
+            tmp_path / name
+        )
     imgs = sb.load_images_from_dir(tmp_path, n=2)
     assert imgs.shape[0] == 2
     assert imgs.shape[1:] == (8, 8, 3)
@@ -154,8 +157,14 @@ def test_run_real_corpus(tmp_path):
     stats = sb.run_real_corpus(tmp_path, n=1)
     assert stats["n_images"] == 1
     assert set(stats["verdict_rates"]) == {"RETAKE", "REVIEW", "PASS"}
-    assert set(stats) >= {"n_images", "verdict_rates", "mean_sharpness", "mean_contrast",
-                          "mean_ink_ratio", "mean_brightness"}
+    assert set(stats) >= {
+        "n_images",
+        "verdict_rates",
+        "mean_sharpness",
+        "mean_contrast",
+        "mean_ink_ratio",
+        "mean_brightness",
+    }
 
 
 def test_run_real_corpus_mixed_sizes(tmp_path):
@@ -180,7 +189,7 @@ def test_check_images(tmp_path):
     Image.fromarray(doc, "RGB").save(p_doc)
     p_blank = tmp_path / "blank.jpg"  # blank page -> RETAKE via ink_ratio
     Image.fromarray(np.full((200, 300, 3), 245, dtype=np.uint8), "RGB").save(p_blank)
-    p_gray = tmp_path / "gray.png"    # single-channel (L-mode) file
+    p_gray = tmp_path / "gray.png"  # single-channel (L-mode) file
     Image.fromarray(np.full((100, 140), 30, dtype=np.uint8), "L").save(p_gray)
 
     res = sb.check_images([p_doc, p_blank, p_gray, tmp_path / "missing.png"])
@@ -189,8 +198,7 @@ def test_check_images(tmp_path):
     r_doc = res[0]
     assert r_doc["verdict"] == "PASS" and r_doc["reasons"] == []
     assert r_doc["size"] == [384, 512]  # (w, h) of the synthetic doc
-    assert set(r_doc["signals"]) == {"sharpness", "contrast", "ink_ratio",
-                                     "brightness", "exposure"}
+    assert set(r_doc["signals"]) == {"sharpness", "contrast", "ink_ratio", "brightness", "exposure"}
 
     r_blank = res[1]
     assert r_blank["verdict"] == "RETAKE"

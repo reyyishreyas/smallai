@@ -24,6 +24,7 @@ Real corpora (e.g. the synthetic medical prescription OCR images mirrored at
 (any format Pillow opens) go through `check_images` (also exposed as the
 CLI `quality` command: `python -m smallai quality --image <file-or-dir>`).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -79,7 +80,7 @@ def make_document(
     n_lines = int(rng.integers(lines_range[0], lines_range[1]))
     line_ys = np.linspace(0.10, 0.86, n_lines)
     ink_lo, ink_hi = 0.02, 0.12
-    y_dev = 0.012 * h          # stroke-scale vertical wobble (px)
+    y_dev = 0.012 * h  # stroke-scale vertical wobble (px)
     for y0 in line_ys:
         # slight line tilt (captures are rarely perfectly axis-aligned)
         y_end = y0 + rng.uniform(-0.02, 0.02)
@@ -188,8 +189,7 @@ def run_sweep(
     return results
 
 
-def run_real_corpus(directory: str | Path, n: int | None = None,
-                    pattern: str = "*.png") -> dict:
+def run_real_corpus(directory: str | Path, n: int | None = None, pattern: str = "*.png") -> dict:
     """Run the offline quality gate over real images in a directory.
 
     Used with real-world corpora such as the synthetic medical prescription
@@ -219,9 +219,14 @@ def run_real_corpus(directory: str | Path, n: int | None = None,
         count += 1
 
     if count == 0:
-        return {"n_images": 0, "verdict_rates": verdict_distribution(np.zeros(0, dtype=np.int64)),
-                "mean_sharpness": float("nan"), "mean_contrast": float("nan"),
-                "mean_ink_ratio": float("nan"), "mean_brightness": float("nan")}
+        return {
+            "n_images": 0,
+            "verdict_rates": verdict_distribution(np.zeros(0, dtype=np.int64)),
+            "mean_sharpness": float("nan"),
+            "mean_contrast": float("nan"),
+            "mean_ink_ratio": float("nan"),
+            "mean_brightness": float("nan"),
+        }
     return {
         "n_images": count,
         "verdict_rates": verdict_distribution(np.array(verdicts, dtype=np.int64)),
@@ -247,28 +252,29 @@ def _gate_reasons(sig: dict[str, np.ndarray]) -> list[str]:
     s = {k: float(np.asarray(v).reshape(-1)[0]) for k, v in sig.items()}
     reasons = []
     if s["brightness"] < iq.RETAKE_BRIGHT_MIN:
-        reasons.append(f"too dark (brightness {s['brightness']:.3f} "
-                       f"< {iq.RETAKE_BRIGHT_MIN})")
+        reasons.append(f"too dark (brightness {s['brightness']:.3f} < {iq.RETAKE_BRIGHT_MIN})")
     if s["ink_ratio"] < iq.RETAKE_INK_MIN:
-        reasons.append(f"no readable content (ink_ratio {s['ink_ratio']:.4f} "
-                       f"< {iq.RETAKE_INK_MIN})")
+        reasons.append(
+            f"no readable content (ink_ratio {s['ink_ratio']:.4f} < {iq.RETAKE_INK_MIN})"
+        )
     if s["sharpness"] < iq.RETAKE_SHARP_MIN:
-        reasons.append(f"unreadably blurry (sharpness {s['sharpness']:.3f} "
-                       f"< {iq.RETAKE_SHARP_MIN})")
+        reasons.append(
+            f"unreadably blurry (sharpness {s['sharpness']:.3f} < {iq.RETAKE_SHARP_MIN})"
+        )
     if reasons:
         return reasons  # RETAKE short-circuits; REVIEW reasons below
     if s["brightness"] < iq.REVIEW_BRIGHT_MIN:
-        reasons.append(f"dim (brightness {s['brightness']:.3f} "
-                       f"< {iq.REVIEW_BRIGHT_MIN})")
+        reasons.append(f"dim (brightness {s['brightness']:.3f} < {iq.REVIEW_BRIGHT_MIN})")
     if s["contrast"] < iq.REVIEW_CONTRAST_MIN:
-        reasons.append(f"washed-out print (contrast {s['contrast']:.3f} "
-                       f"< {iq.REVIEW_CONTRAST_MIN})")
+        reasons.append(
+            f"washed-out print (contrast {s['contrast']:.3f} < {iq.REVIEW_CONTRAST_MIN})"
+        )
     if s["ink_ratio"] < iq.REVIEW_INK_MIN:
-        reasons.append(f"sparse content (ink_ratio {s['ink_ratio']:.4f} "
-                       f"< {iq.REVIEW_INK_MIN})")
+        reasons.append(f"sparse content (ink_ratio {s['ink_ratio']:.4f} < {iq.REVIEW_INK_MIN})")
     if s["sharpness"] < iq.REVIEW_SHARP_MIN:
-        reasons.append(f"soft text edges / mild blur (sharpness {s['sharpness']:.3f} "
-                       f"< {iq.REVIEW_SHARP_MIN})")
+        reasons.append(
+            f"soft text edges / mild blur (sharpness {s['sharpness']:.3f} < {iq.REVIEW_SHARP_MIN})"
+        )
     return reasons
 
 
@@ -289,6 +295,7 @@ def check_images(paths: list[str | Path]) -> list[dict]:
 
     try:  # optional iPhone-HEIC support; silently skipped if not installed
         from pillow_heif import register_heif_opener
+
         register_heif_opener()
     except ImportError:
         pass
@@ -297,9 +304,13 @@ def check_images(paths: list[str | Path]) -> list[dict]:
     for p in paths:
         path = Path(p).expanduser()
         if path.is_dir():
-            out.append({"path": str(path),
-                        "error": "is a directory — pass its files directly "
-                                 "(folders are expanded by the CLI 'quality' command)"})
+            out.append(
+                {
+                    "path": str(path),
+                    "error": "is a directory — pass its files directly "
+                    "(folders are expanded by the CLI 'quality' command)",
+                }
+            )
             continue
         if not path.exists():
             out.append({"path": str(path), "error": "file not found"})
@@ -316,14 +327,18 @@ def check_images(paths: list[str | Path]) -> list[dict]:
             continue
         sig = iq.extract(arr[None])
         verdict = iq.verdict_name(int(iq.decide(sig)[0]))
-        out.append({
-            "path": str(path),
-            "size": [w, h],
-            "signals": {k: round(float(sig[k][0]), 6) for k in
-                        ("sharpness", "contrast", "ink_ratio", "brightness", "exposure")},
-            "verdict": verdict,
-            "reasons": [] if verdict == "PASS" else _gate_reasons(sig),
-        })
+        out.append(
+            {
+                "path": str(path),
+                "size": [w, h],
+                "signals": {
+                    k: round(float(sig[k][0]), 6)
+                    for k in ("sharpness", "contrast", "ink_ratio", "brightness", "exposure")
+                },
+                "verdict": verdict,
+                "reasons": [] if verdict == "PASS" else _gate_reasons(sig),
+            }
+        )
     return out
 
 
