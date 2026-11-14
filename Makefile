@@ -1,4 +1,4 @@
-.PHONY: help setup install test lint format check build clean
+.PHONY: help setup install test lint format format-check check build clean
 
 PY ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
@@ -11,7 +11,7 @@ help:
 	@echo "  test     run the test suite"
 	@echo "  lint     run ruff"
 	@echo "  format   format the code with ruff"
-	@echo "  check    lint + tests (what CI runs)"
+	@echo "  check    lint + format check + tests (what CI runs)"
 	@echo "  build    build sdist + wheel"
 	@echo "  clean    remove caches and generated artifacts"
 
@@ -34,7 +34,10 @@ lint:
 format:
 	$(RUFF) format src tests
 
-check: lint test
+format-check:
+	$(RUFF) format --check src tests
+
+check: lint format-check test
 
 build:
 	$(PY) -m build

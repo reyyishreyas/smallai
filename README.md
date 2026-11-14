@@ -123,7 +123,7 @@ OCR**, and **nothing readable is rejected**.
 - **~14 ms per capture** end-to-end (signal extraction + decision), measured at
   13.8 ms/capture over 50 corpus images on CPU.
 - Streaming corpus runner: 2,000 images in ~40 s with flat memory.
-- **27 tests**, lint-clean, no runtime dependency beyond NumPy and Pillow.
+- **31 tests**, lint-clean, no runtime dependency beyond NumPy and Pillow.
 
 ## 4. Install
 
@@ -228,10 +228,19 @@ the lightest RL setup that deserves the name.
   `RETAKE`. Inference never mutates the table.
 
 Trained on soft corpus labels plus real-ladder evidence from the full 2,000-image
-corpus, it converges to a **16-state, 48-parameter** policy with learn-parity
-against the fixed gate: **mean reward 0.8076 vs 0.8076**, per-image agreement
-0.648. (The default 3-image ladder gives a 9-state, 27-parameter table.) Training
-takes ~2 s on CPU.
+corpus, it converges to a **16-state, 48-parameter** policy that is
+**policy-identical to the fixed gate: 2000/2000 verdicts match**, with the same
+mean reward **0.8076**. The frequently quoted **0.648** is *label agreement* —
+agreement with the soft, partly ambiguous corpus labels — not Q-vs-fixed
+agreement. (The default 3-image ladder gives a 9-state, 27-parameter table.)
+Training takes ~2 s on CPU.
+
+`python -m smallai qgate --diagnose` prints the per-state breakdown: expert
+labels, fixed and Q verdicts, policy disagreements, label disagreements, reward
+and safety counters. On the full corpus it shows 16 trained states (8 observed),
+**0** PASS-on-RETAKE and **0** RETAKE-on-PASS errors for either policy, and the
+label disagreement concentrated in **435 mixed-label images both gates forward
+as `PASS`**.
 
 This stage is **experimental** — it is a research comparison, not the shipped
 policy.
@@ -239,7 +248,7 @@ policy.
 ## 7. Verify
 
 ```bash
-make check     # ruff check + ruff format --check + 27 tests
+make check     # ruff check + ruff format --check + 31 tests
 make test      # tests only
 make lint      # lint only
 make build     # sdist + wheel in dist/
@@ -292,7 +301,9 @@ repository.
 
 - Validate on a second, independent real corpus (handwritten document sets).
 - Field-capture set to firm up the 0.08 boundary and the dark thresholds.
-- Analyse and reduce the Q-gate/fixed-gate disagreement (0.648).
+- Adjudicate the **435** mixed-label corpus images both gates forward as `PASS`;
+  the Q gate issues the same verdicts as the fixed gate, so the remaining gap is
+  label quality, not policy.
 - Profile toward **< 10 ms** per capture.
 - Per-document-type policy calibration before hard-guardrail deployment.
 - Kotlin port of the verdict contract, with golden-vector conformance tests, and

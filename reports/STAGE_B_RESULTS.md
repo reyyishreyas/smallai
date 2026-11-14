@@ -199,9 +199,12 @@ narrow 0.08–0.13 boundary shift), which is a feature: v3.1 only changed the
   used for future recalibration (no retraining needed — thresholds only).
 - v3.1 changed the fixed gate; the branch also carries a learned Q-variant of
   it (Stage B-Q, README §6) trained on the corpus soft labels + real-ladder
-  human-judgment evidence — learn-parity with this gate (now **0.8076 vs 0.8076**,
-  i.e. exact parity, over the enlarged real-ladder training set), 16 states /
-  48 parameters.
+  human-judgment evidence — **policy-identical** to this gate over the enlarged
+  real-ladder training set (**2000/2000 verdicts**, mean reward **0.8076** for
+  both), 16 states / 48 parameters. The `0.648` figure is *label* agreement with
+  the soft corpus labels, not Q-vs-fixed disagreement; `qgate --diagnose` shows
+  **0** safety violations for either policy and 435 label disagreements
+  concentrated in mixed-label images both gates forward as `PASS`.
 
 ## Contract & scope
 
@@ -222,6 +225,7 @@ make build          # verify packaging
 python -m smallai stage-b --images-dir dataset/images
 python -m smallai quality --image shot.jpg   # any real capture
 python -m smallai qgate --real-images dataset/images   # Q-gate on the full corpus
+python -m smallai qgate --real-images dataset/images --diagnose   # per-state Q vs fixed
 python -c "from smallai import stage_b as sb; print(sb.run_sweep(seed=0))"
 python -c "from smallai import stage_b as sb; print(sb.run_real_corpus('dataset/images'))"  # 2000 images, ~40 s
 ```

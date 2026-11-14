@@ -128,9 +128,14 @@ safely above the blur corpus floor (0.072). Full procedure and evidence:
   trained state within **L1 bucket distance ≤ 1**, otherwise **fail-closed**
   (truly novel → RETAKE). Inference never mutates the table.
 
-Result: **16 states / 48 parameters**, learn-parity with the supervised v3.1
-gate (mean reward 0.8076 vs 0.8076 over the full 2000-image corpus), ~14 ms/
-image inference, ~2 s full training on CPU.
+Result: **16 states / 48 parameters**, **policy-identical** to the supervised
+v3.1 gate over the full 2000-image corpus (**2000/2000 verdicts match**, mean
+reward 0.8076 for both), ~14 ms/image inference, ~2 s full training on CPU. The
+**0.648** figure is *label* agreement with the soft corpus labels, not Q-vs-fixed
+agreement. `disagreement_report()` (CLI: `qgate --diagnose`) exposes the
+per-state breakdown; on the corpus both policies have **0** PASS-on-RETAKE and
+**0** RETAKE-on-PASS errors, and the residual label disagreement is concentrated
+in 435 mixed-label images both gates forward as `PASS`.
 
 ## 7. File map
 
@@ -138,7 +143,7 @@ image inference, ~2 s full training on CPU.
 - `src/smallai/stage_b.py` — fixed gate: `extract → decide`, degradation
   sweep (`run_sweep`), real-corpus runner (`run_real_corpus`), `check_images`.
 - `src/smallai/stage_b_q.py` — Q gate: quantization, samples, `QCaptureAgent`,
-  `check_images_with_q`, `run_experiment`.
+  `check_images_with_q`, `run_experiment`, `disagreement_report`.
 - `src/smallai/cli.py` — `quality`, `stage-b`, `qgate` commands.
 - `tests/test_image_quality_stage_b.py`, `tests/test_stage_b_q.py` — gate and
   Q-gate suites.

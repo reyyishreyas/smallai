@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Continuous integration: tests and linting on every pull request.
 - `CONTRIBUTING.md`, `SECURITY.md`, issue and pull-request templates.
+- `qgate --diagnose` / `stage_b_q.disagreement_report()`: per-state comparison of
+  the Q policy against the fixed gate — policy agreement, label disagreement,
+  reward and safety counters.
 
 ### Changed
 
@@ -21,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/AI_267_FULL_CONTEXT.md` → `docs/CONTEXT.md` and
   `reports/AI-267_STAGE_B_RESULTS.md` → `reports/STAGE_B_RESULTS.md`.
 - README rewritten as standalone project documentation (no ticket framing).
+- Stage B-Q results corrected: on the full 2000-image corpus the Q gate is
+  **policy-identical** to the fixed gate (2000/2000 verdicts); `0.648` is label
+  agreement with the soft corpus labels, not Q-vs-fixed disagreement. The only
+  contract-relevant counters are zero for both policies.
 
 ### Removed
 
@@ -44,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deterministic degradation sweep** harness for gate verification.
 - **Stage B-Q (experimental)** — tabular Q-learning gate, 16 states / 48
   parameters, learn-parity with the fixed gate (`0.8076` vs `0.8076` mean
-  reward, `0.648` per-image agreement on 2000 labelled images), fail-closed on
+  reward, `0.648` label agreement on 2000 labelled images), fail-closed on
   novel states.
 - **Documentation** — `README.md`, `docs/ARCHITECTURE.md`,
   `docs/AI_CODING_INSTRUCTIONS.md`, `docs/CONTEXT.md`, and

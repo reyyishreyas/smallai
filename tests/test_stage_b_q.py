@@ -74,6 +74,62 @@ def test_evaluate_metrics():
     assert m["mean_cost"] > 0
 
 
+def test_compare_policies_counts_disagreements():
+    fixed = [iq.PASS, iq.PASS, iq.RETAKE]
+    q = [iq.PASS, iq.REVIEW, iq.RETAKE]
+    c = sbq.compare_policies(fixed, q)
+    assert c["n"] == 3
+    assert c["n_disagreements"] == 1
+    assert c["agreement"] == 2 / 3
+    assert c["pairs"][iq.PASS][iq.REVIEW] == 1
+
+
+def test_per_state_report_breaks_down_labels_and_safety():
+    states = [(0, 0, 0, 0), (0, 0, 0, 0), (1, 2, 3, 2), (1, 2, 3, 2)]
+    experts = [iq.PASS, iq.REVIEW, iq.RETAKE, iq.PASS]
+    fixed = [iq.PASS, iq.PASS, iq.RETAKE, iq.PASS]
+    q = [iq.PASS, iq.REVIEW, iq.RETAKE, iq.RETAKE]
+    rep = sbq.per_state_report(states, experts, fixed, q)
+
+    assert rep["n_samples"] == 4
+    assert rep["n_states_observed"] == 2
+    assert rep["q_vs_fixed"]["n_disagreements"] == 2
+    # Q flagged the mixed-label image; the fixed gate forwarded it
+    assert rep["safety"]["q"]["pass_on_review"] == 0
+    assert rep["safety"]["fixed"]["pass_on_review"] == 1
+    # Q rejected a PASS-labelled image: a wasted recapture, not a contract break
+    assert rep["safety"]["q"]["retake_on_pass"] == 1
+
+    row = {tuple(r["state"]): r for r in rep["per_state"]}[(0, 0, 0, 0)]
+    assert row["n"] == 2
+    assert row["experts"] == {"RETAKE": 0, "REVIEW": 1, "PASS": 1}
+    assert row["disagreements"] == 1
+    # the Q policy matched both labels in this state; the fixed gate did not
+    assert row["label_disagreements"] == 0
+
+
+def test_disagreement_report_falls_back_to_sweep(tmp_path):
+    rep = sbq.disagreement_report(
+        npz_path=tmp_path / "absent.npz",
+        real_ladder_dir=tmp_path / "absent",
+    )
+    assert rep["source"].startswith("sweep")
+    assert rep["n_samples"] == 96
+    assert rep["n_states_observed"] == len(rep["per_state"])
+    assert set(rep["q_vs_fixed"]) == {"n", "agreement", "n_disagreements", "pairs"}
+    assert 0.0 <= rep["q_vs_fixed"]["agreement"] <= 1.0
+
+
+def test_run_experiment_reports_policy_comparison(tmp_path):
+    r = sbq.run_experiment(
+        npz_path=tmp_path / "absent.npz",
+        real_ladder_dir=tmp_path / "absent",
+    )
+    assert r["q_vs_fixed"]["n"] == r["n_samples"]
+    assert 0.0 <= r["q_vs_fixed"]["agreement"] <= 1.0
+    assert r["n_training_samples"] == r["n_samples"]
+
+
 def test_check_images_with_q(tmp_path):
     # the learned policy should route a pristine doc to PASS, and expose the
     # quantized state + per-action Q-values alongside the fixed-gate verdict

@@ -163,6 +163,13 @@ def main(argv: list[str] | None = None) -> int:
         help="directory of real document images behind the qgate "
         "real-ladder supervision (default: data/prescriptions)",
     )
+    parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        default=False,
+        help="qgate command: per-state comparison of the Q policy against the "
+        "fixed gate (agreement, label disagreement, reward, safety counters)",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "stage-b":
@@ -177,6 +184,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "qgate":
         from . import stage_b_q as sbq
 
+        if args.diagnose:
+            print(
+                json.dumps(
+                    sbq.disagreement_report(real_ladder_dir=args.real_images),
+                    indent=2,
+                    default=list,
+                )
+            )
+            return 0
         if args.image:
             results = sbq.check_images_with_q(
                 _quality_file_list(args.image), real_ladder_dir=args.real_images

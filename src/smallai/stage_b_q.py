@@ -37,6 +37,7 @@ Everything is deterministic (fixed seeds) and pure NumPy.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -275,6 +276,130 @@ def evaluate(actions: list[int], experts: list[int]) -> dict:
     }
 
 
+def compare_policies(actions_a: list[int], actions_b: list[int]) -> dict:
+    """Compare two decision sequences.
+
+    `pairs` is indexed ``[a][b]``, so the diagonal is agreement. In
+    `per_state_report` and `run_experiment` the first argument is the fixed
+    gate and the second is the Q gate.
+    """
+    a = np.asarray(actions_a, dtype=int)
+    b = np.asarray(actions_b, dtype=int)
+    if a.shape != b.shape:
+        raise ValueError("action sequences must have the same length")
+    return {
+        "n": int(a.size),
+        "agreement": float((a == b).mean()) if a.size else 1.0,
+        "n_disagreements": int((a != b).sum()),
+        "pairs": [[int(((a == i) & (b == j)).sum()) for j in range(3)] for i in range(3)],
+    }
+
+
+def _safety_counts(actions: list[int], experts: list[int]) -> dict:
+    """Count the mistakes that matter to the verdict contract."""
+    a = np.asarray(actions, dtype=int)
+    e = np.asarray(experts, dtype=int)
+    return {
+        "pass_on_retake": int(((a == PASS) & (e == RETAKE)).sum()),
+        "pass_on_review": int(((a == PASS) & (e == REVIEW)).sum()),
+        "retake_on_pass": int(((a == RETAKE) & (e == PASS)).sum()),
+    }
+
+
+def per_state_report(
+    states: list[tuple[int, ...]],
+    experts: list[int],
+    fixed_actions: list[int],
+    q_actions: list[int],
+    signals: dict[str, np.ndarray] | None = None,
+) -> dict:
+    """Break decisions, labels and reward down by quantized state.
+
+    Answers "where do the policies agree or disagree, and where does either
+    lose reward?" without hiding the answer in an aggregate. The load-bearing
+    counters are kept separate from label noise: `pass_on_retake` and
+    `retake_on_pass` are contract violations, while `pass_on_review` is
+    normally a mixed soft label that the gate chose to trust.
+    """
+    n = len(states)
+    if not (len(experts) == len(fixed_actions) == len(q_actions) == n):
+        raise ValueError("states, experts and actions must have the same length")
+
+    names = list(DECISION_NAMES)
+    expert_arr = np.asarray(experts, dtype=int)
+    fixed_arr = np.asarray(fixed_actions, dtype=int)
+    q_arr = np.asarray(q_actions, dtype=int)
+
+    indices: dict[tuple[int, ...], list[int]] = defaultdict(list)
+    for i, s in enumerate(states):
+        indices[s].append(i)
+
+    rows = []
+    for s, idx in indices.items():
+        members = np.asarray(idx)
+        rows.append(
+            {
+                "state": list(s),
+                "n": int(members.size),
+                "experts": dict(
+                    zip(
+                        names,
+                        (int(x) for x in np.bincount(expert_arr[members], minlength=3)),
+                        strict=True,
+                    )
+                ),
+                "fixed": dict(
+                    zip(
+                        names,
+                        (int(x) for x in np.bincount(fixed_arr[members], minlength=3)),
+                        strict=True,
+                    )
+                ),
+                "q": dict(
+                    zip(
+                        names,
+                        (int(x) for x in np.bincount(q_arr[members], minlength=3)),
+                        strict=True,
+                    )
+                ),
+                "disagreements": int((fixed_arr[members] != q_arr[members]).sum()),
+                "label_disagreements": int((q_arr[members] != expert_arr[members]).sum()),
+                "mean_reward_fixed": round(
+                    float(REWARD[fixed_arr[members], expert_arr[members]].mean()), 6
+                ),
+                "mean_reward_q": round(
+                    float(REWARD[q_arr[members], expert_arr[members]].mean()), 6
+                ),
+                **(
+                    {
+                        "mean_signals": {
+                            k: round(float(np.asarray(signals[k]).reshape(-1)[members].mean()), 6)
+                            for k in _STATE_KEYS
+                            if k in signals
+                        }
+                    }
+                    if signals is not None
+                    else {}
+                ),
+            }
+        )
+
+    rows.sort(key=lambda r: (-r["n"], r["state"]))
+    return {
+        "n_samples": n,
+        "n_states_observed": len(rows),
+        "verdict_names": names,
+        "q_vs_fixed": compare_policies(fixed_actions, q_actions),
+        "q_eval": evaluate(q_actions, experts),
+        "fixed_eval": evaluate(fixed_actions, experts),
+        "safety": {
+            "q": _safety_counts(q_actions, experts),
+            "fixed": _safety_counts(fixed_actions, experts),
+        },
+        "per_state": rows,
+    }
+
+
 def check_images_with_q(
     paths: list[str | Path],
     npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
@@ -334,6 +459,23 @@ def check_images_with_q(
     return results
 
 
+def _sweep_rows(
+    n_docs: int = 24, seed: int = 0
+) -> tuple[list[tuple[int, ...]], list[int], dict[str, np.ndarray]]:
+    """Sweep samples plus the raw signal rows they were quantized from."""
+    states, experts = samples_from_sweep(n_docs=n_docs, seed=seed)
+    rows: dict[str, list[float]] = defaultdict(list)
+    rng = np.random.default_rng(seed)
+    levels = (("none", 0.0), ("blur", 2.0), ("blur", 8.0), ("exposure", 0.1))
+    for _ in range(n_docs):
+        base = sb.make_document(rng)[None]
+        for kind, lvl in levels:  # keep in sync with samples_from_sweep truth
+            s_row = iq.extract(sb.corrupt(base, kind, lvl, rng))
+            for k in _STATE_KEYS:
+                rows[k].append(float(s_row[k][0]))
+    return states, experts, {k: np.array(v) for k, v in rows.items()}
+
+
 def run_experiment(
     npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
     real_ladder_dir: str | Path = "data/prescriptions",
@@ -343,8 +485,13 @@ def run_experiment(
 
     Uses the full-corpus scan when the npz cache exists (2000 supervised
     samples, soft-label experts); otherwise falls back to the deterministic
-    degradation sweep. Returns both policies scored against the SAME labels,
-    so the comparison is apples-to-apples.
+    degradation sweep. Both policies are scored against the SAME labels, so
+    the comparison is apples-to-apples.
+
+    `q_vs_fixed` is the policy-to-policy comparison; `q_gate.agreement` and
+    `fixed_gate.agreement` are agreement with the (soft) expert labels, which
+    is a different question — on the corpus the two policies issue identical
+    verdicts and share the same label disagreement.
 
     `real_ladder_dir` is the directory of real document captures behind the
     human-judgment ladder labels (default `data/prescriptions`, the 800x1000
@@ -355,26 +502,12 @@ def run_experiment(
     p = Path(npz_path)
     if p.exists():
         states, experts = samples_from_corpus(p)
-        source = "corpus (2000 images, soft blur labels)"
-
-        # fixed v3 gate on the same rows, same label mapping
         d = np.load(p, allow_pickle=True)
-        sig = {k: d[k] for k in _STATE_KEYS}
+        sig = {k: np.asarray(d[k]) for k in _STATE_KEYS}
+        source = "corpus (2000 images, soft blur labels)"
     else:
-        from collections import defaultdict
-
-        states, experts = samples_from_sweep()
+        states, experts, sig = _sweep_rows()
         source = "sweep (synthetic, level-truth)"
-        rows: dict[str, list[float]] = defaultdict(list)
-        rng = np.random.default_rng(0)
-        levels = (("none", 0.0), ("blur", 2.0), ("blur", 8.0), ("exposure", 0.1))
-        for _ in range(24):
-            base = sb.make_document(rng)[None]
-            for kind, lvl in levels:  # keep in sync with samples_from_sweep truth
-                s_row = iq.extract(sb.corrupt(base, kind, lvl, rng))
-                for k in _STATE_KEYS:
-                    rows[k].append(float(s_row[k][0]))
-        sig = {k: np.array(v) for k, v in rows.items()}
 
     agent = QCaptureAgent(seed=seed)
     # field evidence: blurred-but-human-readable real captures are REVIEW
@@ -386,7 +519,46 @@ def run_experiment(
     return {
         "source": source,
         "n_samples": len(states),
+        "n_training_samples": len(states) + len(rl),
         "q_gate": {**agent.stats(), **evaluate(q_actions, experts)},
         "fixed_gate": evaluate(fixed_actions, experts),
+        "q_vs_fixed": compare_policies(fixed_actions, q_actions),
         "verdict_names": list(DECISION_NAMES),
+    }
+
+
+def disagreement_report(
+    npz_path: str | Path = "runs/stage_b_corpus_scan.npz",
+    real_ladder_dir: str | Path = "data/prescriptions",
+    seed: int = 0,
+) -> dict:
+    """Train the Q gate and report its per-state behaviour against the fixed gate.
+
+    Same training data as `run_experiment` (corpus labels + real-ladder field
+    evidence, or the sweep fallback), but the output is a per-state table plus
+    the safety counters. It makes the distinction between policy-vs-policy
+    agreement and label agreement explicit, which is where the summary numbers
+    are easy to misread.
+    """
+    p = Path(npz_path)
+    if p.exists():
+        states, experts = samples_from_corpus(p)
+        d = np.load(p, allow_pickle=True)
+        sig = {k: np.asarray(d[k]) for k in _STATE_KEYS}
+        source = "corpus (2000 images, soft blur labels)"
+    else:
+        states, experts, sig = _sweep_rows()
+        source = "sweep (synthetic, level-truth)"
+
+    agent = QCaptureAgent(seed=seed)
+    rl, rx = samples_from_real_ladder(real_ladder_dir)
+    agent.learn(states + rl, experts + rx)
+
+    fixed_actions = [int(x) for x in iq.decide(sig)]
+    report = per_state_report(states, experts, fixed_actions, agent.predict(states), sig)
+    return {
+        "source": source,
+        "n_training_samples": len(states) + len(rl),
+        "training": agent.stats(),
+        **report,
     }

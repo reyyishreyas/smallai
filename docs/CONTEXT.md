@@ -19,7 +19,7 @@ Two stages:
 | Stage | Scope | Status |
 |---|---|---|
 | **B** | Fixed offline capture-quality gate: real images → signals → `RETAKE \| REVIEW \| PASS` | Delivered (v3.1) — full 2000-image corpus: RETAKE **10.3%**, REVIEW **20.35%**, PASS **69.35%** |
-| **B-Q** | Experimental tabular-Q variant of the capture gate (lightest RL: Q-table + bandit rewards) | Delivered — **16 states / 48 params**, learn-parity with the v3.1 fixed gate (mean reward 0.8076 vs 0.8076; agreement 0.648 on all 2000 labelled images) |
+| **B-Q** | Experimental tabular-Q variant of the capture gate (lightest RL: Q-table + bandit rewards) | Delivered — **16 states / 48 params**, **policy-identical** to the v3.1 fixed gate (**2000/2000 verdicts**; mean reward 0.8076 for both). `0.648` is label agreement with soft corpus labels, not Q-vs-fixed disagreement |
 
 ## 2. Hard invariants (never break — full list in `docs/AI_CODING_INSTRUCTIONS.md` §2)
 
@@ -48,9 +48,9 @@ Two stages:
 ## 4. Current delivered numbers (as of 2026-11-14)
 
 - **Stage B (v3.1):** full corpus n=2000 → RETAKE 10.3% / REVIEW 20.35% / PASS 69.35%; sharp-labelled zero-false-RETAKE guarantee held; blurred-labelled zero-PASS guarantee held.
-- **Stage B-Q:** retrained via real-ladder over the enlarged real dataset (`--real-images dataset/images`) → **16 states / 48 params; learn-parity** with the fixed gate (reward **0.8076 vs 0.8076**, agreement **0.648**).
+- **Stage B-Q:** retrained via real-ladder over the enlarged real dataset (`--real-images dataset/images`) → **16 states / 48 params**, **policy-identical** to the fixed gate (**2000/2000 verdicts**, reward **0.8076** for both). `qgate --diagnose` shows **0** safety violations for either policy and **435** label disagreements concentrated in mixed-label images both gates PASS; **0.648** is label agreement, not policy disagreement.
 - **Performance:** 13.8 ms/image measured over 50 corpus images; 2000 images in ~40 s with flat memory.
-- **Tests:** 27 passing; `ruff check` and `ruff format --check` clean.
+- **Tests:** 31 passing; `ruff check` and `ruff format --check` clean.
 
 ## 5. How to work forward (AI tips)
 
@@ -63,7 +63,9 @@ Two stages:
 
 1. Validate on a second, independent real corpus (handwritten document sets).
 2. Collect more field captures to firm up the 0.08 readable-blur boundary and the dark thresholds.
-3. Analyse and reduce the Q-gate / fixed-gate disagreement (0.648).
+3. Adjudicate the **435** mixed-label corpus images both gates forward as `PASS`;
+   the Q gate issues the same verdicts as the fixed gate, so the remaining gap is
+   label quality, not policy.
 4. Profile toward **< 10 ms** per capture.
 5. Cross-implementation parity (Kotlin / Go / Java / Rust) against golden
    vectors for the `RETAKE | REVIEW | PASS` contract.
